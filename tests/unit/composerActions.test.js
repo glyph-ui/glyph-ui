@@ -5,10 +5,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  canFork,
   canSwarm,
   cloneSessionStore,
   composerActionLabel,
   deepResearchPrompt,
+  FORK_HEAD_IDS,
   parseForkResponse,
   resolveComposerAction,
 } from "../../shared/composerActions.mjs";
@@ -83,6 +85,28 @@ describe("canSwarm / labels", () => {
     assert.equal(composerActionLabel("swarm"), "Swarm");
     assert.equal(composerActionLabel("deep-search"), "Deep Search");
     assert.equal(composerActionLabel("chat"), "Chat");
+  });
+});
+
+describe("canFork", () => {
+  it("is for ^_Code and Grok Build, not °_Agent", () => {
+    assert.equal(canFork("glyph-agent"), false);
+    assert.equal(canFork("agent"), false);
+    assert.equal(canFork("_code"), true);
+    assert.equal(canFork("code"), true);
+    assert.equal(canFork("grok"), true);
+  });
+
+  it("blocks unknown or missing heads", () => {
+    assert.equal(canFork(""), false);
+    assert.equal(canFork(null), false);
+    assert.equal(canFork(undefined), false);
+  });
+
+  it("keeps FORK_HEAD_IDS in sync with canFork", () => {
+    for (const id of FORK_HEAD_IDS) {
+      assert.equal(canFork(id), true, `${id} fehlt in canFork`);
+    }
   });
 });
 

@@ -51,6 +51,7 @@ function mixColor(a, b, t) {
  *   windowTokens: number,
  *   model: string,
  *   estimated?: boolean,
+ *   overhead?: number,
  *   animateKey?: string | number | null,
  *   onCompact?: () => void,
  *   compactEnabled?: boolean,
@@ -64,6 +65,7 @@ export function ContextLvlBar({
   windowTokens = 0,
   model = "",
   estimated = false,
+  overhead = 0,
   animateKey = null,
   onCompact = null,
   compactEnabled = false,
@@ -80,11 +82,16 @@ export function ContextLvlBar({
     model,
     estimated,
     softCapPercent: Math.round(softCapRatio * 100),
+    overhead,
   });
 
   const pct = Math.round(Math.min(1, Math.max(0, contextFill)) * 100);
-  /* Option A: single fill-aligned label `LVL N · [~]P%` (not LVL-left + %-right). */
-  const label = formatLvlBarLabel(pct, estimated);
+  /* Balken zeigt verbrauchte Token (`LVL 3 · ~5.2k/16k`); Prozent bleibt im Tooltip. */
+  const label = formatLvlBarLabel(pct, estimated, {
+    tokens: true,
+    used,
+    window: windowTokens,
+  });
   const shortHint =
     pct <= 0
       ? `${label} — Kontext noch leer. Tippen für Legende.`

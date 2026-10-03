@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatWhen } from "../utils/format.js";
 import { seatFetch } from "../utils/seat.js";
+import { scrollChildIntoView } from "../utils/scrollChild.js";
 import { SideDrawer } from "./SideDrawer.jsx";
 
 function CommandOverview({
@@ -55,8 +56,10 @@ function CommandOverview({
       setRenamingId(null);
       setSelectedIndex(0);
       void load();
-      // Lupe opens sessions + search together — focus filter field
-      requestAnimationFrame(() => searchRef.current?.focus());
+      requestAnimationFrame(() => {
+        searchRef.current?.focus?.({ preventScroll: true });
+        if (listRef.current) listRef.current.scrollTop = 0;
+      });
     }
   }, [open, load]);
 
@@ -85,7 +88,7 @@ function CommandOverview({
     const id = filtered[selectedIndex]?.id;
     if (!id) return;
     const el = rowRefs.current.get(id);
-    el?.scrollIntoView({ block: "nearest" });
+    scrollChildIntoView(listRef.current, el, { block: "nearest" });
   }, [selectedIndex, filtered]);
 
   const closeSession = useCallback(

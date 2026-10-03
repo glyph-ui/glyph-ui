@@ -67,7 +67,7 @@ const COMMAND_LEGEND = [
       {
         cmd: "Enter",
         need: "normal",
-        desc: "Desk: Senden (ohne Shift), Shift+Enter = Zeile. Handy: Tastatur-Enter = Zeile, Kopf sendet beim ersten Tap. Slash-Popup: Enter = auswählen. Agent arbeitet → Warteschlange.",
+        desc: "Desk: Senden (ohne Shift), Shift+Enter = Zeile. Handy: Tastatur-Enter = Zeile, Senden-Knopf beim ersten Tap. Slash-Popup: Enter = auswählen. Agent arbeitet → Warteschlange.",
       },
       {
         cmd: "/ · Skills-Seitenpanel",
@@ -90,9 +90,9 @@ const COMMAND_LEGEND = [
         desc: "Letzten Nutzer-Turn und alles danach aus dem Verlauf nehmen. Esc Esc, /rewind, oder ↺ an der Nachricht. Dateien bleiben.",
       },
       {
-        cmd: "Kopf / Snack · Stopp",
+        cmd: "Senden-Knopf · Stopp",
         need: "auto",
-        desc: "Runder Button: idle = Graph-Kopf (Grok Build · °_Agent · ^_Code; Handy: erster Tap sendet). Während Arbeit oder Vault-Suche: Text = Queue/neue Suche; leerer Klick/Snack = Stopp (ACP bzw. Fetch-Abbruch). Kritische Tools laufen sicher zu Ende mit Hinweis.",
+        desc: "Rahmenloser runder Knopf: idle = goldener Pfeil nach oben (senden; Handy: erster Tap). Während der Arbeit = pochendes goldenes Stopp-Quadrat, bei Hänger rot — Klick bricht ab (ACP bzw. Fetch-Abbruch). Text während der Arbeit = Queue/neue Suche. Kritische Tools laufen sicher zu Ende.",
       },
       {
         cmd: "Chat | Deep Search | Fork | Swarm",
@@ -275,7 +275,7 @@ const SHORT_HANDBOOK = [
     title: "Schnellstart",
     body: [
       "Oben rechts **Ketten-Icon** (gold) = Agent läuft. Offline (durchgestrichen)? Icon klicken.",
-      "Nachricht tippen → Desk **Enter** senden · **Shift+Enter** = Zeile. Handy: Tastatur-Enter = Zeile, Kopf = senden.",
+      "Nachricht tippen → Desk **Enter** senden · **Shift+Enter** = Zeile. Handy: Tastatur-Enter = Zeile, Senden-Knopf = senden.",
       "Ohne Verbindung ist das Eingabefeld deaktiviert.",
       "Sicherheit: Bridge mit vollen Tool-Rechten — **nur localhost**.",
     ],
@@ -286,7 +286,7 @@ const SHORT_HANDBOOK = [
     body: [
       "**Graph** (Leiste): folgt Theme (Dunkel pechschwarz / Hell Papier). Köpfe um Glyph; Vaults/Roots als Punkte. Klick → Legende.",
       "**Grok Build:** OAuth im Terminal (`grok login`). Glyph speichert keinen OAuth-Token — nur Status.",
-      "**^_Code / °_Agent:** Header-Pille oder Graph-Kopf → Host-URL, Direct-Key, OpenRouter-Key, Modell. Ohne Slash = Direct (`deepseek-v4-flash-vision-exp`), mit Slash = OpenRouter (`deepseek/deepseek-v4-flash-0731`).",
+      "**^_Code / °_Agent:** Header-Pille oder Graph-Kopf → Blatt Anbindung: Zeilen Direct / Router (live/cut · Host), Bearbeiten öffnet Host+Key. Modelle darunter. Ohne Slash = Direct (`deepseek-v4-flash-vision-exp`), mit Slash = Router (OpenRouter `deepseek/…` oder Orca `z-ai/…`). Router-Host: `https://openrouter.ai/api/v1` oder `https://api.orcarouter.ai/v1`.",
       "**Vaults (Kabelsalat):** Obsidian an °_Agent — Pfad / Name / `obsidian://` · r · r+w · 🔒 · Kabel an/ab. SoT: `~/.glyph/vaults.json`.",
       "**Workspaces (Kabelsalat):** Code-Roots an ^_Code — Pfad · r · r+w · 🔒. `r+w` = beschreibbar, nicht Auto-Write. SoT: `~/.glyph/workspaces.json`.",
       "**An/Ab** = Kabel durchtrennen, Eintrag bleibt.",
@@ -301,8 +301,9 @@ const SHORT_HANDBOOK = [
       "Links: Kalender, Lupe, **Graph**, Neuer Chat, **Befehle und Skills**, Wiki, Workspace, Theme, UI neu laden, **Buch** (Handbuch · UI-Legende). Kalender & Skills = **Seitenpanel** (Chat bleibt); **Graph** = Vollfläche.",
       "Header links: Glyph #0.9.0 · Term · ACP. cwd nicht in der Zeile (Tooltip / Workspace-Button). Rechts: Profil · Modell-Pille (eingesetztes Modell, nicht Primary→Reserve) · Kette.",
       "glyph-ui.com: Header Stift · Befehle · Theme · Schloss · **UI neu laden**. Keine Kette (Beenden).",
-      "Mitte: Chat-Verlauf (Markdown). Rechts: Snack-Scrollbar (Raupe / Apfel).",
-      "Unten: **Arbeitsleiste** (Plan · Ordner · Aktiver Task) über der LVL-Leiste · Composer · Chat | Deep Search | Fork | Swarm · **Mic** · **Kopf**. °_Agent: Pixel-Apfel über dem Kopf = Ordner-Suche.",
+      "Mitte: Chat-Verlauf (Markdown).",
+      "**Quellen & Anhänge = Chips (Regel):** anklickbare Knöpfe, nie Fließtext-Links — Quellenleiste mit Kürzel **WEB**/**PDF**/**MD**/**OBS** + Titel, im Fließtext kompakt ohne Kürzel (Domain/Titel). Klick öffnet die Quelle im Seitenfenster (gesperrte Webseiten als Textansicht, **Browser** = Original).",
+      "Unten: **Arbeitsleiste** (Plan · Ordner · Aktiver Task) über der LVL-Leiste · Composer · **Mikro** · Chat | Deep Search | Fork | Swarm · **Senden-Pfeil** (golden, rahmenlos). °_Agent: Pixel-Apfel über dem Senden-Knopf = Ordner-Suche.",
     ],
   },
   {
@@ -325,14 +326,14 @@ const SHORT_HANDBOOK = [
     title: "Schreiben & senden",
     rows: [
       ["Chat", "Normale Nachricht an den aktiven Agenten"],
-      ["Apfel", "°_Agent: über dem Kopf. Wiki, TinyFish und Exa laufen immer. An = Arbeits-Vault beim Senden, Composer leer, Query in der Leiste. ×/Snack bricht ab. Vault leer → KomNet, sonst DGUV. Aus = allgemeine Suche, Internet, soziale Netze."],
+      ["Apfel", "°_Agent: über dem Senden-Knopf. Wiki, TinyFish und Exa laufen immer. An = Arbeits-Vault beim Senden, Composer leer, Query in der Leiste. × bricht ab. Vault leer → KomNet, sonst DGUV. Aus = allgemeine Suche, Internet, soziale Netze."],
       ["Treffer", "Arbeitsleiste über LVL, nicht im Chat. Start aus; nur angeklickte Arbeits-Vault-Treffer gehen in den Kontext. Web mit Apfel: KomNet/DGUV."],
       ["Deep Search", "Grok: strukturierte Multi-Quellen-Recherche. Andere Köpfe ausgegraut."],
       ["Fork", "Session branchen; Text = optionale Directive"],
       ["Swarm", "°_Agent / ^_Code: Planer, Suche, Synthese. Grok ausgegraut."],
       ["↑", "Leerer Composer: Prompt-History"],
       ["Rewind", "Esc Esc · /rewind · ↺ an der Nutzer-Nachricht. Dateien bleiben."],
-      ["Enter", "Desk: senden · Handy: Tastatur = Zeile, Kopf sendet (erster Tap)"],
+      ["Enter", "Desk: senden · Handy: Tastatur = Zeile, Senden-Knopf (erster Tap)"],
       ["Shift+Enter", "Neue Zeile ohne Senden (Desk)"],
     ],
   },
@@ -350,11 +351,11 @@ const SHORT_HANDBOOK = [
     id: "working",
     title: "Während der Agent arbeitet",
     rows: [
-      ["Idle", "Button zeigt den Kopf (Grok Build / °_Agent / ^_Code) → senden"],
-      ["Arbeitet", "Runder Snack (Raupe jagt Pixel-Apfel)"],
-      ["Überfressen", "Raupe auf dem Rücken, Füße hoch, Apfel auf dem Kopf + Banner — Hänger, manuell neu starten"],
+      ["Idle", "Goldener Pfeil nach oben → senden"],
+      ["Arbeitet", "Pochendes goldenes Stopp-Quadrat"],
+      ["Überfressen", "Stopp-Quadrat wird rot, dazu Banner — Hänger, manuell neu starten"],
       ["Text + Enter", "Follow-up → Warteschlange (WARTE)"],
-      ["Leer / Snack", "Soft-Stop (ACP-Cancel) im Kreis-Button"],
+      ["Leer / Stopp", "Soft-Stop (ACP-Cancel) über den Senden-Knopf"],
       ["Arbeitsleiste", "Plan, Ordner-Suche, Aktiver Task: Gold-Rand, Label, × — über der LVL-Leiste, nicht Bildmitte. Freigabe bleibt eigenes Modal."],
       ["× / Leeren", "Queue-Eintrag bzw. ganze Queue löschen"],
       ["Neue Ausgabe ↓", "Wieder ans aktuelle Chat-Ende springen"],
@@ -410,7 +411,7 @@ const SHORT_HANDBOOK = [
     title: "Aufgaben (Übergabe)",
     body: [
       "Kette an einer Antwort: Arbeitsleiste, Beleg (Meldung + Antwort, aufklappbar) + Titel + **Was ist zu tun**. Ohne das Paar keine Aufgabe. Kein Session-Sprung.",
-      "Liegt unter **Plan & Aktivität**. **Übernehmen** → Composer. **Fertig** nur mit Pfad oder Ort.",
+      "Liegt unter **Plan & Aktivität**. **Übernehmen** → Composer. **Erledigt** nimmt die Aufgabe aus dem Plan (kein Pfad).",
       "Aufgabe ≠ Task-Freigabe, ≠ wiederkehrendes To-do.",
     ],
   },
@@ -422,7 +423,7 @@ const SHORT_HANDBOOK = [
       ["Eingabe grau", "Erst verbinden"],
       [
         "hängt",
-        "Snack mit X_X = überfressen (2+ Min still) · tippen = Stop · UI neu laden · sonst npm run service:install",
+        "Stopp-Quadrat rot = überfressen (2+ Min still) · tippen = Stop · UI neu laden · sonst npm run service:install",
       ],
       ["Disk voll", "Lupe → Schließen (Session-Ordner). Wissen: /merken"],
       ["UI veraltet", "UI neu laden in der Leiste"],
@@ -436,7 +437,7 @@ const SHORT_HANDBOOK = [
     body: [
       "✓ Graph: Grok Build OAuth / Agent Direct · Status **verbunden**",
       "✓ Workspace passt (Header-Pfad)",
-      "✓ Desk: Enter = senden · Handy: Tastatur-Enter = Zeile, Kopf = senden",
+      "✓ Desk: Enter = senden · Handy: Tastatur-Enter = Zeile, Senden-Knopf = senden",
       "✓ Arbeit: Text → Queue, leer → Stop",
       "✓ Lupe · Kalender · Wiki · Mic / Lautsprecher",
     ],

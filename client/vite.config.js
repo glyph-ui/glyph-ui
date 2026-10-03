@@ -18,6 +18,15 @@ export default defineConfig({
     // package.json version + git commit count (baked at build / dev start)
     __GLYPH_VERSION__: JSON.stringify(glyphVersion),
     __GLYPH_BUILD__: JSON.stringify(glyphBuild),
+    // Bauzeit — nur Anzeige, damit „welcher Build läuft?" sichtbar ist
+    __GLYPH_STAMP__: JSON.stringify(
+      new Date().toLocaleString("de-DE", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    ),
   },
   server: {
     port: 5173,
@@ -48,6 +57,7 @@ export default defineConfig({
           ) {
             return "react";
           }
+          if (id.includes("pdfjs-dist")) return "pdfjs";
           return undefined;
         },
       },

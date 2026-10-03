@@ -3,6 +3,7 @@
  * Copyright (c) 2026 Alexander Hubert
  * SPDX-License-Identifier: MIT
  */
+import { useEffect, useState } from "react";
 import { hitId, hitKindLabel, hitVaultLabel } from "../utils/vaultSearch.js";
 import { ComposerSheet } from "./ComposerSheet.jsx";
 
@@ -22,6 +23,38 @@ export function VaultSearchHits({
   const chosen = selectedIds instanceof Set ? selectedIds : new Set();
   const onCount = hits.filter((h) => chosen.has(hitId(h))).length;
   void fallback; // engine may still set KomNet/DGUV; sheet title is Hub+Copy
+
+  // Altersanzeige: nur melden, wenn der semantische Index spürbar zurückliegt.
+  const [indexInfo, setIndexInfo] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/search-status")
+      .then((r) => r.json())
+      .then((j) => {
+        if (alive) setIndexInfo(j?.index || null);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const alterTage =
+    indexInfo?.alter_h != null ? Math.round(Number(indexInfo.alter_h) / 24) : null;
+  const indexAlt = Boolean(indexInfo && (indexInfo.stale || Number(indexInfo.alter_h) > 24));
+  const indexStand = indexInfo?.stand
+    ? new Date(indexInfo.stand).toLocaleDateString("de-DE", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })
+    : "";
+  const indexNote = indexAlt ? (
+    <p className="composer-sheet-note">
+      Such-Index Stand {indexStand}
+      {alterTage ? ` (${alterTage} ${alterTage === 1 ? "Tag" : "Tage"} alt)` : ""} — wird
+      automatisch nachgezogen.
+    </p>
+  ) : null;
 
   let body = null;
   if (busy) {
@@ -108,6 +141,7 @@ export function VaultSearchHits({
         ) : null
       }
     >
+      {indexNote}
       {body}
     </ComposerSheet>
   );

@@ -6,7 +6,9 @@ export {
   CONTEXT_WINDOWS,
   DEFAULT_CONTEXT_WINDOW,
   DEFAULT_SOFT_CAP_PERCENT,
+  LOCAL_CONTEXT_WINDOWS,
   PROFILE_DEFAULT_WINDOWS,
+  PROMPT_OVERHEAD_TOKENS,
   contextFillRatio,
   estimateTokensFromTexts,
   formatContextTooltip,
@@ -18,4 +20,5 @@ export {
   normalizeModelId,
   resolveContextWindow,
   scrollMetrics,
+  withPromptOverhead,
 } from "../../../shared/contextMeter.mjs";

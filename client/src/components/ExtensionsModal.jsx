@@ -5,6 +5,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rankCatalog, slashItemLabel, withoutHiddenAgentCommands } from "../utils/slash.js";
+import { scrollChildIntoView } from "../utils/scrollChild.js";
 import { SideDrawer } from "./SideDrawer.jsx";
 
 /** Unified badge label: SKILL / UI / USER */
@@ -51,7 +52,9 @@ function ExtensionsModal({
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const searchRef = useRef(null);
+  const listRef = useRef(null);
   const rowRefs = useRef(new Map());
+  const openedRef = useRef(false);
 
   const skillItems = useMemo(
     () =>
@@ -83,9 +86,16 @@ function ExtensionsModal({
   const filterEmpty = Boolean(query.trim()) && items.length === 0 && !loading;
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      openedRef.current = false;
+      return;
+    }
     setQuery(String(initialQuery || ""));
     setSelectedIndex(0);
+    openedRef.current = true;
+    requestAnimationFrame(() => {
+      if (listRef.current) listRef.current.scrollTop = 0;
+    });
     // Seed once per open — further typing stays in the filter field
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initialQuery at open
   }, [open]);
@@ -100,16 +110,24 @@ function ExtensionsModal({
 
   useEffect(() => {
     if (!open) return;
+    if (openedRef.current) {
+      openedRef.current = false;
+      return;
+    }
     const item = items[selectedIndex];
     if (!item) return;
     const el = rowRefs.current.get(`${item.kind}:${item.name}`);
-    el?.scrollIntoView({ block: "nearest" });
+    scrollChildIntoView(listRef.current, el, { block: "nearest" });
   }, [open, selectedIndex, items]);
 
   const pick = (item, { close = false } = {}) => {
     if (!item) return;
-    onPick?.(item, { close });
-    if (close) {
+    const phone =
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 640px), (pointer: coarse)").matches;
+    const shouldClose = close || phone;
+    onPick?.(item, { close: shouldClose });
+    if (shouldClose) {
       onClose?.();
       return;
     }
@@ -139,7 +157,7 @@ function ExtensionsModal({
       headExtra={
         <button
           type="button"
-          className="ghost"
+          className="ghost extensions-head-zu"
           disabled={!selected}
           title="Ausgewählten Eintrag einfügen und Panel schließen"
           onClick={() => pick(selected, { close: true })}
@@ -194,6 +212,7 @@ function ExtensionsModal({
       ) : null}
 
       <div
+        ref={listRef}
         className="overview-list extensions-list"
         role="listbox"
         aria-label="Skills und Befehle"

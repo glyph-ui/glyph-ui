@@ -16,7 +16,8 @@ import * as acp from "@agentclientprotocol/sdk";
 import { Readable, Writable } from "node:stream";
 import { buildPromptWithAttachments } from "../shared/attachments.mjs";
 import { createIdleTimer } from "./acpIdle.mjs";
-import { buildStepBanner, formatThinkStep } from "./stepBanner.mjs";
+import { createSessionCancelGate } from "./acpCancel.mjs";
+import { buildStepBanner, formatThinkStep, resolveStepDisplay } from "./stepBanner.mjs";
 import { agentVaultBodyFromMeta } from "./vaultFlags.mjs";
 import { sliceMessagesBeforeUser } from "../shared/rewind.mjs";
 import { cloneSessionStore } from "../shared/composerActions.mjs";
@@ -48,6 +49,8 @@ const SHOW_STEP_BANNER = !["0", "false", "off"].includes(
 
 // In-Memory Session-Speicher (Test/Zustand; ohne Langzeit-Persistenz)
 const sessions = new Map();
+/** session/cancel → abort in-flight session/prompt (ACP example pattern). */
+const cancelGate = createSessionCancelGate();
 let sessionCounter = 0;
 const newSessionId = () =>
   `${IS_CODE ? "code" : "glyph-agent"}-${++sessionCounter}`;
@@ -119,13 +122,13 @@ async function notifyAssistantMeta(client, sessionId, meta) {
   }
 }
 
-// Sprach-Mapping für Live-Stufen (identisch zu stepBanner.mjs, hier lokal für die
-// Chunk-Serialisierung ohne Import-Zyklus über die reine Funktion).
+// Sprach-Mapping für Live-Stufen (Defaults wie stepBanner.mjs).
+// VaultFind/Wiki: resolveStepDisplay wählt Aktion anhand detail (Wiki vs. Arbeits-Vault).
 const STEP_MARKERS = {
-  VaultFind: ["SearchVault", "suche im Obsidian-Vault (Arbeitssicherheit/HSEQ)"],
-  VaultRecall: ["SearchVault", "suche im Obsidian-Vault (alias)"],
-  VaultSearch: ["SearchVault", "suche im Obsidian-Vault (alias)"],
-  WikiSearch: ["SearchVault", "suche im Vault/Wiki (alias)"],
+  VaultFind: ["SearchVault", "suche Notizen"],
+  VaultRecall: ["SearchVault", "suche Notizen (alias)"],
+  VaultSearch: ["SearchVault", "suche Notizen (alias)"],
+  WikiSearch: ["Wiki", "suche im Wiki (alias)"],
   WikiGet: ["ReadNote", "liest Wiki-Notiz (alias)"],
   WikiApply: ["WriteNote", "wendet Wiki-Änderung an (alias)"],
   WikiStatus: ["WikiStatus", "Wiki-Status (agent-digest)"],
@@ -154,7 +157,10 @@ const STEP_MARKERS = {
   RunCommand: ["RunCommand", "Shell (Whitelist)"],
 };
 
-function stepLabel(action) {
+function stepLabel(action, detail = "") {
+  if (["VaultFind", "VaultRecall", "VaultSearch", "WikiSearch"].includes(action)) {
+    return resolveStepDisplay(action, detail)[0];
+  }
   const m = STEP_MARKERS[action] || [action, action];
   return m[0];
 }
@@ -163,13 +169,15 @@ function renderStepStart(action, detail) {
   if (action === "OpenRouter") {
     return formatThinkStep(detail, { isCode: IS_CODE });
   }
-  const m = STEP_MARKERS[action] || [action, action];
+  const m = ["VaultFind", "VaultRecall", "VaultSearch", "WikiSearch"].includes(action)
+    ? resolveStepDisplay(action, detail)
+    : (STEP_MARKERS[action] || [action, action]);
   const base = `${m[0]} · ${m[1]}`;
   return detail ? `${base} — ${detail}` : base;
 }
 
 function renderStepEnd(action, status, detail) {
-  const label = stepLabel(action);
+  const label = stepLabel(action, detail);
   if (status === "error") {
     return `${label} — fehlgeschlagen${detail ? `: ${detail}` : ""}`;
   }
@@ -334,6 +342,16 @@ async function streamChat(body, client, sessionId, signal, onActivity) {
   let buf = "";
 
   while (true) {
+    if (signal?.aborted) {
+      try {
+        await reader.cancel();
+      } catch {
+        /* ignore */
+      }
+      const err = new Error("Aborted");
+      err.name = "AbortError";
+      throw err;
+    }
     const { done, value } = await reader.read();
     if (done) break;
     buf += decoder.decode(value, { stream: true });
@@ -375,6 +393,8 @@ async function streamChat(body, client, sessionId, signal, onActivity) {
           if (visible) await streamDraftChunks(visible, client, sessionId);
         }
       } else if (type === "answer") {
+        // Cancelled: do not present late final answer as success.
+        if (signal?.aborted) continue;
         // Nur Final/Status. Replace, nicht append (ein answer pro Turn).
         if (typeof ev.text === "string" && ev.text) {
           const visible = publicAgentText(
@@ -397,6 +417,7 @@ async function streamChat(body, client, sessionId, signal, onActivity) {
       } else if (type === "done" || type === "error") {
         final = ev;
         if (ev && typeof ev.trace === "object" && ev.trace !== null) trace = ev.trace;
+        if (signal?.aborted) continue;
         if (ev && typeof ev.answer === "string" && ev.answer && !answerText) {
           answerText = ev.answer;
           // done-only answers (z.B. pending_confirmation) noch streamen
@@ -519,9 +540,13 @@ app.onRequest(acp.methods.agent.session.prompt, async (ctx) => {
   const built = await buildPromptWithAttachments(params.prompt || []);
   store.messages.push({ role: "user", content: built.message });
 
-  const abortController = new AbortController();
+  // Per-session cancel gate (session/cancel aborts this controller).
+  const abortController = cancelGate.begin(sessionId);
   let timedOut = false;
-  const onAbort = () => abortController.abort();
+  const onAbort = () => {
+    abortController.abort();
+  };
+  // Connection/request close also aborts (SDK signal).
   signal.addEventListener("abort", onAbort, { once: true });
   // Idle, nicht Wall-Clock: lange Tool-Ketten bleiben lebendig, solange
   // der Stream Events schickt. Hängender /chat ohne Bytes → Abbruch.
@@ -596,8 +621,14 @@ app.onRequest(acp.methods.agent.session.prompt, async (ctx) => {
         pending.staged_count = final.pending.staged_count;
       }
       idle.pause();
+      if (abortController.signal.aborted) {
+        return { stopReason: "cancelled" };
+      }
       const decision = await askPermission(client, sessionId, pending);
       idle.arm();
+      if (abortController.signal.aborted) {
+        return { stopReason: "cancelled" };
+      }
       const allowed = Boolean(decision?.allowed);
       const why =
         decision?.scope === "task"
@@ -654,6 +685,10 @@ app.onRequest(acp.methods.agent.session.prompt, async (ctx) => {
       if (banner) displayText = banner + answerText;
     }
 
+    if (abortController.signal.aborted && !timedOut) {
+      return { stopReason: "cancelled" };
+    }
+
     store.messages.push({ role: "assistant", content: displayText });
 
     // Effective server trace via ACP _meta (schema-valid). UI reads glyph.trace.
@@ -666,9 +701,13 @@ app.onRequest(acp.methods.agent.session.prompt, async (ctx) => {
     }
     await notifyAssistantMeta(client, sessionId, meta);
 
+    // Race: cancel landed after last stream byte but before response.
+    if (abortController.signal.aborted && !timedOut) {
+      return { stopReason: "cancelled" };
+    }
     return { stopReason: "end_turn" };
   } catch (err) {
-    if (err.name === "AbortError") {
+    if (err.name === "AbortError" || abortController.signal.aborted) {
       if (timedOut) {
         const secs = Math.round(TIMEOUT_MS / 1000);
         const msg =
@@ -682,19 +721,22 @@ app.onRequest(acp.methods.agent.session.prompt, async (ctx) => {
         }
         return { stopReason: "end_turn" };
       }
-      return { stopReason: "stop" };
+      // User/session cancel — never end_turn / stop (UI would claim success).
+      return { stopReason: "cancelled" };
     }
     throw err;
   } finally {
     idle.stop();
     signal.removeEventListener("abort", onAbort);
+    cancelGate.end(sessionId, abortController);
   }
 });
 
 // --- session/cancel notification ---
-app.onNotification(acp.methods.agent.session.cancel, async () => {
-  // Abbruch wird über das AbortSignal des laufenden prompt gehandhabt.
-  return;
+app.onNotification(acp.methods.agent.session.cancel, async ({ params }) => {
+  const sessionId = params?.sessionId;
+  // Abort in-flight /chat fetch + idle timer; prompt returns stopReason cancelled.
+  cancelGate.cancel(sessionId);
 });
 
 // --- Stdio-Verbindung aufspannen ---

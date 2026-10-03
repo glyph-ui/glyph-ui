@@ -67,6 +67,29 @@ import {
   VAULT_FIND_TIMEOUT_MS,
   vaultFindProxyCatch,
 } from "./vaultFindProxy.mjs";
+import {
+  HTML_CAP,
+  capText,
+  extractReadable,
+  isEmbeddable,
+  parsePageUrl,
+} from "./webExtract.mjs";
+import {
+  HSEQ_BUTTON_DEFAULT_JOB,
+  HSEQ_BUTTON_JOBS,
+  hseqAuthState,
+  hseqCorsHeaders,
+  hseqJobAllowed,
+  hseqThrottled,
+} from "./hseqButton.mjs";
+import {
+  HSEQ_TRIGGER_POLL_MS,
+  formatHseqStatus,
+  hseqStatusFile,
+  hseqTriggerFile,
+  hseqTriggerFresh,
+  parseHseqTrigger,
+} from "./hseqTrigger.mjs";
 import * as acp from "@agentclientprotocol/sdk";
 import {
   DEFAULT_AGENT_ID,
@@ -98,6 +121,11 @@ import {
 } from "./sessions.js";
 import { buildActivity } from "./activity.js";
 import { mergeToolFields, resolveToolDisplayTitle } from "./toolTitle.mjs";
+import {
+  cancelSystemText,
+  resolveCancelStopReason,
+  shouldDropAssistantChunk,
+} from "./acpCancel.mjs";
 import { getWikiRoot } from "./wiki-archive.js";
 import {
   listVoices,
@@ -118,6 +146,12 @@ import {
   readBindingsFile,
   bindingsPath,
 } from "./bindings.js";
+import {
+  localStatus,
+  localStart,
+  localStop,
+  localTouch,
+} from "./localModel.mjs";
 import {
   getGlyphRoot,
   glyphBuildLabel,
@@ -582,6 +616,233 @@ app.use((req, res, next) => {
   if (req.path === "/api/stt" || req.path === "/api/attachments") return next();
   return express.json({ limit: "1mb" })(req, res, next);
 });
+
+/**
+ * HSEQ-Knopf aus Obsidian — auch vom Arbeits-PC/Handy über glyph-ui.com.
+ *
+ * Steht bewusst VOR Web-Tor und Origin-Sperre: DataviewJS kann kein Gate-Cookie
+ * senden und hat einen fremden Origin. Ersatz-Tor ist das Passwort des Web-Tors
+ * im Header, Job-Liste fest, Drossel gegen Doppelklicks, Bremse gegen Raten.
+ */
+const hseqLastRun = new Map();
+const hseqAuthFailures = new Map();
+
+app.options("/api/hseq/run", (req, res) => {
+  for (const [k, v] of Object.entries(hseqCorsHeaders(req.get("origin")))) {
+    res.setHeader(k, v);
+  }
+  res.status(204).end();
+});
+
+app.post("/api/hseq/run", async (req, res) => {
+  for (const [k, v] of Object.entries(hseqCorsHeaders(req.get("origin")))) {
+    res.setHeader(k, v);
+  }
+
+  const job =
+    String(req.body?.job ?? HSEQ_BUTTON_DEFAULT_JOB).trim() ||
+    HSEQ_BUTTON_DEFAULT_JOB;
+  if (!hseqJobAllowed(job)) {
+    res.status(400).json({
+      ok: false,
+      error: `Job nicht erlaubt: ${job}`,
+      jobs: HSEQ_BUTTON_JOBS,
+    });
+    return;
+  }
+
+  const client = req.socket?.remoteAddress || "?";
+  const auth = hseqAuthState(hseqAuthFailures.get(client));
+  if (auth.blocked) {
+    res.status(429).json({
+      ok: false,
+      error: `zu viele Fehlversuche — ${Math.ceil(auth.remainingMs / 60000)} min warten`,
+    });
+    return;
+  }
+  if (!webPassword || !passwordsMatch(req.get("x-glyph-password"), webPassword)) {
+    hseqAuthFailures.set(client, [...auth.recent, Date.now()]);
+    res.status(401).json({ ok: false, error: "Passwort falsch" });
+    return;
+  }
+  hseqAuthFailures.delete(client);
+
+  const gate = hseqThrottled(hseqLastRun.get(job));
+  if (gate.blocked) {
+    res.status(429).json({
+      ok: false,
+      error: `läuft gerade — noch ${Math.ceil(gate.waitMs / 1000)} s`,
+      waitMs: gate.waitMs,
+    });
+    return;
+  }
+  hseqLastRun.set(job, Date.now());
+
+  try {
+    const base = await glyphAgentBaseUrl();
+    const r = await fetch(`${base}/recurring/${encodeURIComponent(job)}/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force: true }),
+      signal: AbortSignal.timeout(900000),
+    });
+    const json = await r.json().catch(() => ({}));
+    res.status(r.ok ? 200 : 502).json(json);
+  } catch (err) {
+    res.status(502).json({
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
+/**
+ * Sync-Auslöser: Der Knopf am Arbeits-PC schreibt nur eine Notiz in den Vault
+ * (kein HTTP, kein Passwort, keine Firewall-Frage). Obsidian Sync trägt sie zum
+ * Mac; hier wird sie gelesen und derselbe recurring-Job gestartet wie um 18:00.
+ *
+ * Stand (letzter Token) liegt auf Disk, damit ein Neustart nichts doppelt fährt.
+ */
+const HSEQ_TRIGGER_STATE_FILE = path.join(STATE_DIR, "hseq-trigger.json");
+
+async function loadHseqTriggerState() {
+  try {
+    const raw = JSON.parse(await fs.readFile(HSEQ_TRIGGER_STATE_FILE, "utf8"));
+    return {
+      lastToken: String(raw?.lastToken || ""),
+      lastRunAt: Number(raw?.lastRunAt) || 0,
+    };
+  } catch {
+    return { lastToken: "", lastRunAt: 0 };
+  }
+}
+
+async function saveHseqTriggerState(state) {
+  try {
+    await fs.mkdir(STATE_DIR, { recursive: true });
+    await fs.writeFile(
+      HSEQ_TRIGGER_STATE_FILE,
+      `${JSON.stringify(state, null, 2)}\n`,
+      { mode: 0o600 },
+    );
+  } catch (err) {
+    console.error("[hseq] Trigger-Stand nicht speicherbar:", err);
+  }
+}
+
+async function writeHseqStatus(file, status) {
+  if (!file) return;
+  try {
+    await fs.writeFile(file, formatHseqStatus(status), "utf8");
+  } catch (err) {
+    console.error("[hseq] Status-Notiz nicht schreibbar:", err);
+  }
+}
+
+function startHseqTriggerWatcher() {
+  const triggerFile = hseqTriggerFile();
+  if (!triggerFile) {
+    console.log(
+      "HSEQ-Funkauslöser  → aus (GLYPH_HSEQ_VAULT / GLYPH_HSEQ_TRIGGER_FILE nicht gesetzt)",
+    );
+    return;
+  }
+  const statusFile = hseqStatusFile(triggerFile);
+  const pollMs = Math.max(
+    2000,
+    Number(process.env.GLYPH_HSEQ_POLL_MS || HSEQ_TRIGGER_POLL_MS),
+  );
+  let lastToken = "";
+  let loaded = false;
+  let busy = false;
+
+  const tick = async () => {
+    if (busy) return;
+    if (!loaded) {
+      lastToken = (await loadHseqTriggerState()).lastToken;
+      loaded = true;
+    }
+    let text = "";
+    try {
+      text = await fs.readFile(triggerFile, "utf8");
+    } catch {
+      return; // noch nicht im Sync oder auf diesem Rechner kein Vault
+    }
+    const trigger = parseHseqTrigger(text);
+    if (!hseqTriggerFresh(trigger, lastToken)) return;
+
+    // Sofort merken: ein Lauf darf auch nach Neustart nicht doppelt starten.
+    lastToken = trigger.token;
+    await saveHseqTriggerState({ lastToken, lastRunAt: Date.now() });
+
+    if (!hseqJobAllowed(trigger.job)) {
+      await writeHseqStatus(statusFile, {
+        ok: false,
+        job: trigger.job,
+        at: new Date().toISOString(),
+        detail: `Job nicht erlaubt — erlaubt: ${HSEQ_BUTTON_JOBS.join(", ")}`,
+      });
+      return;
+    }
+
+    const gate = hseqThrottled(hseqLastRun.get(trigger.job));
+    if (gate.blocked) {
+      await writeHseqStatus(statusFile, {
+        ok: false,
+        job: trigger.job,
+        at: new Date().toISOString(),
+        detail: `läuft gerade — noch ${Math.ceil(gate.waitMs / 1000)} s`,
+      });
+      return;
+    }
+    hseqLastRun.set(trigger.job, Date.now());
+
+    busy = true;
+    console.log(`[hseq] Sync-Auslöser → ${trigger.job} (${trigger.token})`);
+    try {
+      const base = await glyphAgentBaseUrl();
+      const r = await fetch(
+        `${base}/recurring/${encodeURIComponent(trigger.job)}/run`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ force: true }),
+          signal: AbortSignal.timeout(900000),
+        },
+      );
+      const json = await r.json().catch(() => ({}));
+      const res = (json.results && json.results[0]) || json;
+      const detail = String(
+        res?.answer || json?.answer || json?.error || `HTTP ${r.status}`,
+      )
+        .split("\n")[0]
+        .slice(0, 240);
+      await writeHseqStatus(statusFile, {
+        ok: r.ok && json?.ok !== false,
+        job: trigger.job,
+        at: new Date().toISOString(),
+        detail,
+      });
+      console.log(`[hseq] ${trigger.job} fertig → HTTP ${r.status}`);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      await writeHseqStatus(statusFile, {
+        ok: false,
+        job: trigger.job,
+        at: new Date().toISOString(),
+        detail,
+      });
+      console.error(`[hseq] ${trigger.job} fehlgeschlagen:`, detail);
+    } finally {
+      busy = false;
+    }
+  };
+
+  const timer = setInterval(() => void tick(), pollMs);
+  if (typeof timer.unref === "function") timer.unref();
+  console.log(`HSEQ-Funkauslöser  → ${triggerFile} (alle ${pollMs / 1000}s)`);
+  void tick();
+}
 
 /**
  * glyph-ui.com: require the Web-Tor cookie. HTML/assets stay reachable so
@@ -1381,6 +1642,149 @@ app.post("/api/vault/find", async (req, res) => {
  */
 proxyAgent("workspaces");
 
+/**
+ * Quelldatei anzeigen: GET /api/vault/file?path=… → glyph-agent /vault/file.
+ * Roh durchgereicht (PDF-Bytes), Scope prüft der Agent.
+ */
+app.get("/api/vault/file", async (req, res) => {
+  const p = String(req.query?.path || "").trim();
+  if (!p) {
+    res.status(400).json({ ok: false, error: "path fehlt" });
+    return;
+  }
+  const format = String(req.query?.format || "").trim().toLowerCase();
+  try {
+    const base = await glyphAgentBaseUrl();
+    const qs = new URLSearchParams({ path: p });
+    if (format) qs.set("format", format);
+    const r = await fetch(`${base}/vault/file?${qs.toString()}`, {
+      signal: AbortSignal.timeout(30000),
+    });
+    if (format === "pages" || format === "text") {
+      const j = await r.json().catch(() => ({}));
+      res.status(r.ok ? 200 : r.status === 403 || r.status === 404 ? r.status : 502).json(j);
+      return;
+    }
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      res
+        .status(r.status === 403 || r.status === 404 ? r.status : 502)
+        .json({ ok: false, error: j.error || `Datei nicht ladbar (HTTP ${r.status})` });
+      return;
+    }
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.setHeader(
+      "Content-Type",
+      r.headers.get("content-type") || "application/octet-stream",
+    );
+    res.setHeader("Content-Length", String(buf.length));
+    res.setHeader("Cache-Control", "private, max-age=60");
+    res.status(200).end(buf);
+  } catch (err) {
+    res.status(502).json({ ok: false, error: `Datei nicht ladbar: ${err?.message || err}` });
+  }
+});
+
+/**
+ * Web-Quelle lesen: GET /api/web/page?url=…
+ * Prüft, ob sich die Seite im <iframe> zeigen lässt (X-Frame-Options /
+ * frame-ancestors) und liefert den Inhalt als lesbaren Text. Das ist der
+ * Fallback für Seiten, die die Einbettung verbieten — dort zeigt der Browser
+ * sonst nur den durchgestrichenen Kreis („keine Anzeige“).
+ */
+const webPageCache = new Map();
+const WEB_PAGE_TTL_MS = 5 * 60 * 1000;
+const WEB_PAGE_CACHE_MAX = 32;
+
+/** Abruf mit Umleitungsprüfung: jedes Ziel muss die URL-Sperre passieren. */
+async function fetchWebPage(startUrl) {
+  let url = startUrl;
+  for (let hop = 0; hop < 5; hop += 1) {
+    const parsed = parsePageUrl(url);
+    if (!parsed.ok) throw new Error(parsed.error);
+    // eslint-disable-next-line no-await-in-loop
+    const r = await fetch(parsed.url, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(12000),
+      headers: {
+        accept: "text/html,application/xhtml+xml",
+        "user-agent": "Mozilla/5.0 (Macintosh; Glyph-Quellenfenster)",
+      },
+    });
+    if ([301, 302, 303, 307, 308].includes(r.status)) {
+      const loc = r.headers.get("location");
+      if (!loc) return r;
+      url = new URL(loc, parsed.url).toString();
+      continue;
+    }
+    return r;
+  }
+  throw new Error("zu viele Umleitungen");
+}
+
+app.get("/api/web/page", async (req, res) => {
+  const parsed = parsePageUrl(String(req.query?.url || ""));
+  if (!parsed.ok) {
+    res.status(400).json({ ok: false, error: parsed.error });
+    return;
+  }
+  const hit = webPageCache.get(parsed.url);
+  if (hit && Date.now() - hit.at < WEB_PAGE_TTL_MS) {
+    res.json(hit.payload);
+    return;
+  }
+  try {
+    const r = await fetchWebPage(parsed.url);
+    if (!r.ok) {
+      res.status(502).json({ ok: false, error: `Seite nicht ladbar (HTTP ${r.status})` });
+      return;
+    }
+    const type = String(r.headers.get("content-type") || "");
+    if (type && !/text\/html|application\/xhtml/i.test(type)) {
+      res
+        .status(415)
+        .json({ ok: false, error: `Keine HTML-Seite (${type.split(";")[0]})` });
+      return;
+    }
+    const raw = await r.text();
+    const { title, text } = extractReadable(raw.slice(0, HTML_CAP));
+    const payload = {
+      ok: true,
+      url: r.url || parsed.url,
+      title,
+      text: capText(text),
+      embeddable: isEmbeddable(r.headers),
+    };
+    if (webPageCache.size >= WEB_PAGE_CACHE_MAX) {
+      webPageCache.delete(webPageCache.keys().next().value);
+    }
+    webPageCache.set(parsed.url, { at: Date.now(), payload });
+    res.json(payload);
+  } catch (err) {
+    res.status(502).json({ ok: false, error: `Seite nicht ladbar: ${err?.message || err}` });
+  }
+});
+
+/**
+ * Such-Index-Status: GET /api/search-status — Stand/Frische des Vault-Index
+ * (glyph-agent/logs/vault_index.status.json, geschrieben von
+ * glyph-agent/scripts/vault_index_refresh.py). Zeigt die UI als Altershinweis.
+ */
+const VAULT_INDEX_STATUS_FILE = path.join(
+  process.env.GLYPH_AGENT_ROOT || "/Users/lxndrhbrt/glyph-agent",
+  "logs",
+  "vault_index.status.json",
+);
+
+app.get("/api/search-status", async (_req, res) => {
+  try {
+    const raw = await fs.readFile(VAULT_INDEX_STATUS_FILE, "utf8");
+    res.json({ ok: true, index: JSON.parse(raw) });
+  } catch {
+    res.json({ ok: true, index: null });
+  }
+});
+
 app.get("/api/code/grants", async (_req, res) => {
   try {
     const base = await glyphAgentBaseUrl();
@@ -1612,7 +2016,8 @@ app.get("/api/voice/status", async (_req, res) => {
 /**
  * Connection bindings: OAuth/key status + local secret store (~/.glyph-ui/bindings.json).
  * GET never returns raw secrets. PUT accepts DIRECT_API_KEY, DIRECT_API_URL,
- * OPENROUTER_API_KEY, XAI_API_KEY, GLYPH_AGENT_URL (empty string clears).
+ * OPENROUTER_API_KEY, OPENROUTER_URL, XAI_API_KEY, GLYPH_AGENT_URL
+ * (empty string clears).
  */
 app.get("/api/bindings", async (_req, res) => {
   try {
@@ -1688,6 +2093,199 @@ app.put("/api/bindings", async (req, res) => {
 });
 
 /**
+ * Lokales Modell (Ternary Bonsai 2 27B): Zustand + Lebensdauer.
+ * Gestartet wird über /api/local/start, geschlafen über /stop.
+ *
+ * Bewusst NICHT in der Admin-Sperre der Web-Fläche (webSurface.mjs) — der
+ * lokale Modus soll auch auf glyph-ui.com nutzbar sein. Der Schutz kommt
+ * deshalb von: Passwort-Tor (Standard-Middleware), Single-Flight + Cooldown +
+ * Auto-Schlafen (server/localModel.mjs) und dem engen Zuschnitt dieser
+ * Routen — /api/local/select schaltet NUR den Agent-Provider zwischen "local"
+ * und dem vorherigen Modus um und öffnet nicht die Bindings-Fläche.
+ */
+let localPrevProvider = null;
+
+/**
+ * Zeitpunkt des letzten ausdrücklichen „lokal"-Wunsches (Klick oder Start).
+ *
+ * Schützt vor einem Wettlauf: `select {enabled:true}` setzt den Provider sofort
+ * auf „local", der Modellprozess braucht danach ~20 s. In diesem Fenster ist der
+ * Zustand noch „sleeping" — ohne diese Sperre würde der Auto-Rückfall genau den
+ * Start rückgängig machen, den der Nutzer gerade angefordert hat, und man käme
+ * nie wieder auf 27B.
+ */
+let localWantedAt = 0;
+const LOCAL_WANTED_GRACE_MS = 60000;
+
+/**
+ * Agent-Provider auf „local" setzen oder auf den vorherigen Modus zurück.
+ *
+ * Gemeinsame Logik von `/api/local/select` (Nutzerklick) und dem automatischen
+ * Rückfall, wenn das Modell einschläft — sonst driften beide Wege auseinander.
+ * Liefert den tatsächlich gesetzten Provider.
+ */
+async function setLocalProvider(enabled) {
+  const cur = await buildBindingsStatus({
+    stateDir: STATE_DIR,
+    env: process.env,
+  });
+  const current = String(cur?.provider || "hybrid");
+  if (enabled && current !== "local") localPrevProvider = current;
+  if (enabled) localWantedAt = Date.now();
+  const target = enabled ? "local" : localPrevProvider || "hybrid";
+  const patch = { provider: target, kind: "agent" };
+  const saved = await updateBindings(patch, {
+    stateDir: STATE_DIR,
+    env: process.env,
+  });
+  clearApiKeyCache();
+  const agentUrl =
+    String(
+      process.env.GLYPH_AGENT_URL || saved.settings?.GLYPH_AGENT_URL || "",
+    ).trim() || "http://127.0.0.1:18899";
+  const plan = buildAgentPush(saved, patch);
+  let apply = null;
+  if (plan.push) {
+    apply = await pushModelsToAgent(agentUrl, plan.models, {
+      direct: plan.direct,
+      provider: plan.provider,
+      kind: plan.kind,
+    });
+  }
+  return { target, apply, saved };
+}
+
+app.get("/api/local/status", async (_req, res) => {
+  // Der Provider kommt mit hinein: die Web-Fläche darf /api/bindings nicht
+  // lesen (webSurface.mjs), braucht aber „ist lokal gerade aktiv?".
+  let provider = "";
+  let providerActive = "";
+  try {
+    const st = await buildBindingsStatus({
+      stateDir: STATE_DIR,
+      env: process.env,
+    });
+    provider = String(st?.provider || "");
+    providerActive = String(st?.providerActive || "");
+  } catch {
+    /* Bindings nicht lesbar — der Modellzustand allein genügt */
+  }
+
+  // Auto-Rückfall: Das Modell schläft nach 20 Minuten Leerlauf ein (Absicht —
+  // es gibt ~8 GB frei). Die Engine schickt die nächste Frage trotzdem an den
+  // toten Port und antwortet mit HTTP 500 „Connection refused"; niemand weckt
+  // es auf. Statt den Nutzer in einen Fehler laufen zu lassen, wechseln wir
+  // sichtbar auf den vorherigen Modus: die Pille im Header zeigt danach
+  // „API remote", ein Klick darauf weckt das Modell wieder.
+  //
+  // Nur bei „sleeping", und erst nach der Schonfrist: direkt nach einem
+  // Nutzerklick ist der Zustand noch „sleeping", obwohl der Start schon läuft.
+  // Bei „error" bleibt der Fehler stehen — ein abgestürztes Modell soll nicht
+  // unbemerkt in die Cloud abfließen.
+  if (
+    provider === "local" &&
+    localStatus().state === "sleeping" &&
+    Date.now() - localWantedAt > LOCAL_WANTED_GRACE_MS
+  ) {
+    try {
+      const r = await setLocalProvider(false);
+      provider = r.target;
+      providerActive = r.target;
+    } catch {
+      /* Wechsel fehlgeschlagen — der Zustand bleibt wie er ist */
+    }
+  }
+
+  // Echtes Kontextfenster des Modellservers — der LVL-Balken rechnet damit
+  // (16k statt der 256k-Skala von °_Agent).
+  let contextWindow = 0;
+  try {
+    const st = localStatus();
+    if (st.ready) {
+      // /slots liegt an der Wurzel, NICHT unter /v1 (st.url endet auf /v1).
+      const base = String(st.url || "").replace(/\/v1\/?$/, "");
+      const r = await fetch(`${base}/slots`, {
+        signal: AbortSignal.timeout(2500),
+      });
+      if (r.ok) {
+        const slots = await r.json();
+        contextWindow = Number(slots?.[0]?.n_ctx) || 0;
+      }
+    }
+  } catch {
+    /* Modell schlaeft oder /slots nicht verfuegbar */
+  }
+  res.json({
+    ...localStatus(),
+    provider,
+    providerIsLocal: provider === "local",
+    contextWindow,
+  });
+
+  // Selbstheilung nach einem Engine-Neustart: die Engine haelt den Provider
+  // nur im Speicher (Hot-Apply). Startet sie neu, faellt sie still auf die
+  // Cloud zurueck — genau das, was ein lokaler Modus verhindern soll, und
+  // ohne dass es in der UI auffaellt (die Antwort kommt ja, nur von woanders).
+  // bindings.json ist die Wahrheit; die Route wird alle 10 s gepollt, also
+  // zieht das hier innerhalb eines Intervalls nach. Nur bei echter Abweichung,
+  // und ohne die Antwort zu blockieren.
+  if (provider === "local" && providerActive && providerActive !== "local") {
+    void syncModelsIfMismatch({ stateDir: STATE_DIR, env: process.env }).catch(
+      () => {},
+    );
+  }
+});
+
+app.post("/api/local/start", async (_req, res) => {
+  const st = localStatus();
+  if (st.state === "ready") {
+    res.json({ ok: true, ...st });
+    return;
+  }
+  if (st.state === "starting") {
+    res.status(202).json({ ok: true, starting: true, ...st });
+    return;
+  }
+  // Nicht blockieren: der Start dauert ~16 s, die UI pollt /api/local/status.
+  // localWantedAt setzen, damit der Auto-Rückfall den frisch angeforderten
+  // Start nicht sofort wieder umkehrt.
+  localWantedAt = Date.now();
+  void localStart({ reason: "api" }).catch(() => {});
+  res.status(202).json({ ok: true, starting: true, ...localStatus() });
+});
+
+app.post("/api/local/stop", async (_req, res) => {
+  try {
+    res.json(await localStop({ reason: "manual" }));
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
+/** Aktivität melden (UI), damit das Auto-Schlafen nicht mitten im Chat greift. */
+app.post("/api/local/touch", (_req, res) => {
+  res.json(localTouch());
+});
+
+/** Provider auf "local" bzw. zurück auf den vorherigen Modus schalten. */
+app.post("/api/local/select", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const enabled = body.enabled !== false;
+    const { target, apply } = await setLocalProvider(enabled);
+    res.json({ ok: true, provider: target, apply, ...localStatus() });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
+/**
  * Apply bindings models to running glyph-agent (or sync if mismatch).
  * POST { } empty → sync from file if mismatch; or { models } to push explicit.
  */
@@ -1733,7 +2331,8 @@ app.post("/api/models/probe", async (req, res) => {
       String(
         process.env.GLYPH_AGENT_URL || file.settings?.GLYPH_AGENT_URL || "",
       ).trim() || "http://127.0.0.1:18899";
-    const result = await probeModelOnAgent(agentUrl, model);
+    const hop = String(req.body?.hop || "").trim() || undefined;
+    const result = await probeModelOnAgent(agentUrl, model, hop ? { hop } : {});
     if (result.ok && result.context_length) {
       /* client may cache */
     } else if (result.ok) {
@@ -1885,8 +2484,21 @@ app.get("/api/context", async (req, res) => {
     if (!sessionId && bridgeSid && (profile === "grok" || bridgeProfile === profile)) {
       sessionId = bridgeSid;
     }
-    // Effective model: query → env cloud model for glyph-agent → empty
+    // Effective model: query → Anbindung Direct-Primary → OpenRouter-Reserve
     let modelHint = String(req.query.model || "").trim();
+    if (!modelHint) {
+      try {
+        const file = await readBindingsFile(bindingsPath(STATE_DIR));
+        const models = file?.models;
+        if (profile === "_code" && models?.code?.primary) {
+          modelHint = String(models.code.primary).trim();
+        } else if (models?.shared?.primary) {
+          modelHint = String(models.shared.primary).trim();
+        }
+      } catch {
+        /* bindings optional */
+      }
+    }
     if (!modelHint && profile === "glyph-agent") {
       modelHint = String(process.env.OPENROUTER_MODEL || "").trim();
     }
@@ -2246,20 +2858,9 @@ class GrokBridge {
     this.cancelling = false;
     this.activeTools.clear();
 
-    if (!wasCancelling && stopReason !== "cancelled") return;
-
-    if (stopReason === "cancelled") {
-      this.broadcast({
-        type: "system",
-        text: "Antwort abgebrochen.",
-      });
-    } else if (wasCancelling) {
-      // Agent finished the turn instead of aborting (safer for mid-tool work)
-      this.broadcast({
-        type: "system",
-        text:
-          "Abbruch nicht sofort möglich — Arbeit wurde sicher zu Ende geführt.",
-      });
+    const text = cancelSystemText(stopReason, wasCancelling);
+    if (text) {
+      this.broadcast({ type: "system", text });
     }
   }
 
@@ -2635,6 +3236,8 @@ class GrokBridge {
         this.broadcast({ type: "draft_chunk", text: text.slice(DRAFT_CONT.length), cont: true });
         return;
       }
+      // User clicked Abbrechen: never append a late final answer as success.
+      if (shouldDropAssistantChunk(text, this.cancelling)) return;
       this.broadcast({ type: "assistant_chunk", text });
       return;
     }
@@ -2851,8 +3454,12 @@ class GrokBridge {
       const isAgent =
         this.agentId === "glyph-agent" || this.agentId === "agent";
       if (isAgent) {
-        // Immer setzen: fehlt das Flag, fällt die Engine auf B+-Auto-Suche zurück.
-        glyph.vaultSearch = opts.vaultSearch === true;
+        // NUR setzen, wenn die UI es ausdrücklich mitschickt. Fehlt das Flag, nutzt
+        // die Engine die automatische Vault-Suche (B+). Ein erzwungenes `false`
+        // hier hat den Vault stillschweigend abgeschaltet (Web-Modus statt Doku).
+        if (typeof opts.vaultSearch === "boolean") {
+          glyph.vaultSearch = opts.vaultSearch;
+        }
         if (Array.isArray(opts.vaultSelected)) {
           glyph.vaultSelected = opts.vaultSelected;
         }
@@ -2881,6 +3488,9 @@ class GrokBridge {
       // Always end the turn for the UI so the follow-up queue can drain
       // (even when the agent request throws). Wait until HERE before idle —
       // never mark idle just because cancel was requested.
+      // If user cancelled but agent returned end_turn (cloud already in flight),
+      // still mark cancelled so UI does not treat it as success.
+      stopReason = resolveCancelStopReason(this.cancelling, stopReason);
       this.endCancelState(stopReason);
       this.busy = false;
       this.broadcast({
@@ -3174,7 +3784,7 @@ class GrokBridge {
           .join(", ");
         this.broadcast({
           type: "system",
-          text: `Stopp angefordert — laufendes Werkzeug wird sicher zu Ende geführt (${names}), danach Abbruch.`,
+          text: `Abbruch angefordert — warte kurz auf laufendes Werkzeug (${names}), danach Stopp.`,
         });
       } else {
         this.broadcast({
@@ -3198,8 +3808,8 @@ class GrokBridge {
         this.broadcast({
           type: "system",
           text: stillCritical.length
-            ? "Abbruch wartet noch auf sicheres Tool-Ende — bitte kurz warten."
-            : "Abbruch dauert länger als erwartet — Agent arbeitet noch; UI bleibt gesperrt bis Turn endet.",
+            ? "Abbruch wartet noch auf Tool-Ende — bitte kurz warten."
+            : "Abbruch dauert länger als erwartet — Turn wird als abgebrochen markiert, sobald der Agent antwortet.",
         });
         this.broadcast(this.statusPayload({ busy: true, cancelling: true }));
       }, 8000);
@@ -3496,6 +4106,9 @@ httpServer.listen(PORT, HOST, () => {
   if (typeof uploadCleanupTimer.unref === "function") {
     uploadCleanupTimer.unref();
   }
+
+  // Obsidian-Sync-Auslöser (Arbeits-PC → Mac) parallel zum 18:00-Job.
+  startHseqTriggerWatcher();
 
   // Connect ACP agent after the UI is already reachable.
   seats.get("desk").start().catch((err) => {

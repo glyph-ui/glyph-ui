@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-const STORAGE_PREFIX = "glyph-vault-search:";
+const STORAGE_PREFIX = "glyph-vault-search-v2:";
 
 function vaultSearchStorageKey(sessionId) {
   return `${STORAGE_PREFIX}${sessionId || "new"}`;
@@ -12,7 +12,9 @@ function vaultSearchStorageKey(sessionId) {
 
 function loadVaultSearchOn(sessionId) {
   try {
-    return sessionStorage.getItem(vaultSearchStorageKey(sessionId)) === "1";
+    const raw = sessionStorage.getItem(vaultSearchStorageKey(sessionId));
+    // Default aus. Nur ein ausdrückliches "1" schaltet die Ordner-Suche an.
+    return raw === "1";
   } catch {
     return false;
   }

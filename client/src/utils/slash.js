@@ -77,6 +77,27 @@ export function insertSlashCommand(text, cursor, name) {
 }
 
 /**
+ * True when inserting `name` would only repeat the command already at the
+ * cursor (complete token) or as the trailing slash-word — used to stop
+ * double-taps on mobile from stacking `/skill /skill`.
+ *
+ * @param {string} text
+ * @param {number} cursor
+ * @param {string} name
+ */
+export function isDuplicateSlashInsert(text, cursor, name) {
+  const cmd = String(name || "")
+    .trim()
+    .replace(/^\//, "");
+  if (!cmd) return false;
+  const token = slashTokenAt(text, cursor);
+  if (token) return token.query === cmd;
+  const trimmed = String(text ?? "").trimEnd();
+  const esc = cmd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|\\s)/${esc}$`).test(trimmed);
+}
+
+/**
  * Fuzzy score: higher is better. 0 = no match.
  *
  * @param {string} query
@@ -156,6 +177,30 @@ export function rankCatalog(skills, commands, query) {
       .map((x) => x.item);
 
   return [...rank(skills), ...rank(commands)];
+}
+
+/**
+ * Open the Skills drawer from the Composer only while composing (`/` or a
+ * prefix). Clicking an already inserted `/name` must not reopen the panel
+ * (otherwise the command cannot be deleted on mobile).
+ *
+ * @param {string} text
+ * @param {number} cursor
+ * @param {{ typing?: boolean, skills?: object[], commands?: object[] }} [opts]
+ */
+export function shouldOpenSkillsFromComposer(text, cursor, opts = {}) {
+  if (!opts.typing) return false;
+  const token = slashTokenAt(text, cursor);
+  if (!token) return false;
+  const q = catalogNameKey(token.query);
+  if (!q) return true;
+  const items = [...(opts.skills || []), ...(opts.commands || [])];
+  const exact = items.some(
+    (it) =>
+      catalogNameKey(it.name) === q ||
+      (it.aliases || []).some((al) => catalogNameKey(al) === q),
+  );
+  return !exact;
 }
 
 /**

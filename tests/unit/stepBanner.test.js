@@ -17,7 +17,7 @@ test("buildStepBanner", async (t) => {
     assert.equal(buildStepBanner(undefined), "");
   });
 
-  await t.test("VaultFind leer (nichts gefunden) + WebSearch + OpenRouter-Zeile", () => {
+  await t.test("VaultFind leer (nichts gefunden) + WebSearch + Router-Zeile", () => {
     const data = {
       answer: "Antworttext",
       trace: {
@@ -34,17 +34,58 @@ test("buildStepBanner", async (t) => {
     };
     const banner = buildStepBanner(data);
     // Tool-Stufen enthalten; LLM/answer nicht als Tool-Zeile.
-    assert.match(banner, /SearchVault.*suche im Obsidian-Vault/);
+    // hybrid → Arbeits-Vault (nicht Obsidian-/HSEQ-Phrase)
+    assert.match(banner, /Vault — suche im Arbeits-Vault/);
+    assert.doesNotMatch(banner, /Obsidian-Vault/);
     assert.match(banner, /nichts gefunden/);
     assert.match(banner, /SearchWeb.*suche im Internet/);
     assert.doesNotMatch(banner, /Tool · LLM/);
     assert.doesNotMatch(banner, /Tool · answer/);
-    // OpenRouter-Zeile mit Modell.
-    assert.match(banner, /OpenRouter · OpenRouter \/ openai\/gpt-5\.6-luna/);
+    // Router-Zeile mit Modell.
+    assert.match(banner, /Router · Router \/ openai\/gpt-5\.6-luna/);
     // Endet mit Sentinel (für UI-Split), KEIN Querstrich mehr.
     assert.ok(banner.includes("<!-- glyph-steps-end -->"));
     assert.ok(banner.endsWith("\n\n"));
     assert.doesNotMatch(banner, /─/);
+  });
+
+
+  await t.test("VaultFind memory-wiki → Wiki, kein Obsidian-Vault", () => {
+    const banner = buildStepBanner({
+      trace: {
+        steps: [{ step: "VaultFind", status: "success", detail: "memory-wiki" }],
+        provider: "openrouter",
+        model: "m",
+      },
+    });
+    assert.match(banner, /Wiki — suche im Wiki/);
+    assert.match(banner, /memory-wiki/);
+    assert.doesNotMatch(banner, /Obsidian-Vault/);
+    assert.doesNotMatch(banner, /Arbeitssicherheit|HSEQ/);
+  });
+
+  await t.test("VaultFind Wiki-Detail → Wiki-Wording", () => {
+    const banner = buildStepBanner({
+      trace: {
+        steps: [{ step: "VaultFind", status: "success", detail: "3 Treffer (Wiki)" }],
+        provider: "openrouter",
+        model: "m",
+      },
+    });
+    assert.match(banner, /Wiki — suche im Wiki — 3 Treffer \(Wiki\)/);
+    assert.doesNotMatch(banner, /Obsidian-Vault/);
+  });
+
+  await t.test("VaultFind ohne Detail → neutrales suche Notizen", () => {
+    const banner = buildStepBanner({
+      trace: {
+        steps: [{ step: "VaultFind", status: "success", detail: "" }],
+        provider: "openrouter",
+        model: "m",
+      },
+    });
+    assert.match(banner, /SearchVault — suche Notizen/);
+    assert.doesNotMatch(banner, /Obsidian-Vault/);
   });
 
   await t.test("Fehler-Status wird als fehlgeschlagen übersetzt", () => {

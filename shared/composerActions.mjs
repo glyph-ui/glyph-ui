@@ -19,6 +19,20 @@ export function canSwarm(agentId) {
   );
 }
 
+/** Graph-Köpfe, die Fork verarbeiten (^_Code, Grok Build — nicht °_Agent). */
+export const FORK_HEAD_IDS = ["_code", "code", "grok"];
+
+/**
+ * Fork im °_Agent gesperrt: Dort gibt es keine Session-Übersicht
+ * (server/agents.js: sessionList false), also keinen Weg zurueck zur
+ * Quell-Session. Steuerung bleibt sichtbar, aber gesperrt.
+ * @param {string | null | undefined} agentId
+ */
+export function canFork(agentId) {
+  const id = String(agentId || "");
+  return FORK_HEAD_IDS.includes(id);
+}
+
 /**
  * @param {string | null | undefined} action
  */

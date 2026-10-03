@@ -18,12 +18,15 @@ import {
   modelsToAgentPayload,
   normalizeBindingsFile,
   normalizeModels,
+  hopFromModelId,
+  probeModelOnAgent,
   pushModelsToAgent,
   readBindingsFile,
   resolveKeySource,
   updateBindings,
   writeBindingsFile,
   buildAgentPush,
+  syncModelsIfMismatch,
 } from "../../server/bindings.js";
 
 test("maskSecret", () => {
@@ -246,6 +249,36 @@ test("buildBindingsStatus: OpenRouter alone enables Voice profile", async () => 
   assert.equal(status.keys.XAI_API_KEY.set, false);
 });
 
+test("normalizeBindingsFile keeps OPENROUTER_URL as Router-Host", () => {
+  const nested = normalizeBindingsFile({
+    keys: { OPENROUTER_API_KEY: "sk-orca-abc" },
+    settings: { OPENROUTER_URL: "https://api.orcarouter.ai/v1" },
+  });
+  assert.equal(nested.settings.OPENROUTER_URL, "https://api.orcarouter.ai/v1");
+});
+
+test("buildAgentPush: OPENROUTER_URL goes to live openrouter_url", () => {
+  const saved = {
+    keys: { OPENROUTER_API_KEY: "sk-orca-abc" },
+    settings: {
+      DIRECT_API_URL: "https://api.deepseek.com",
+      OPENROUTER_URL: "https://api.orcarouter.ai/v1",
+    },
+    models: {
+      shared: {
+        primary: "deepseek-v4-flash-vision-exp",
+        fallback: "z-ai/glm-5.3-flash",
+      },
+    },
+  };
+  const plan = buildAgentPush(saved, {
+    OPENROUTER_URL: "https://api.orcarouter.ai/v1",
+  });
+  assert.equal(plan.push, true);
+  assert.equal(plan.direct.openrouter_url, "https://api.orcarouter.ai/v1");
+  assert.equal(plan.direct.openrouter_key, "sk-orca-abc");
+});
+
 test("buildAgentPush: Direct-Key Schreiben sends live api_key", () => {
   const saved = {
     keys: { DIRECT_API_KEY: "sk-new-3e4e" },
@@ -277,6 +310,95 @@ test("buildAgentPush: clearing Direct-Key still notifies the agent", () => {
   assert.equal(plan.direct.api_key, "");
 });
 
+test("updateBindings persists OPENROUTER_URL and applies env", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "glyph-bind-orurl-"));
+  const file = path.join(dir, "bindings.json");
+  const env = {};
+  await updateBindings(
+    { OPENROUTER_URL: "https://api.orcarouter.ai/v1" },
+    { stateDir: dir, bindingsFile: file, env },
+  );
+  const read = await readBindingsFile(file);
+  assert.equal(read.settings.OPENROUTER_URL, "https://api.orcarouter.ai/v1");
+  assert.equal(env.OPENROUTER_URL, "https://api.orcarouter.ai/v1");
+});
+
+test("syncModelsIfMismatch pushes OPENROUTER_URL when live host differs", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "glyph-bind-sync-or-"));
+  const file = path.join(dir, "bindings.json");
+  await writeBindingsFile(
+    {
+      keys: { OPENROUTER_API_KEY: "sk-orca-abc" },
+      settings: { OPENROUTER_URL: "https://api.orcarouter.ai/v1" },
+      models: {
+        shared: { primary: "z-ai/glm-5.3-flash-free", fallback: "" },
+      },
+      provider: "openrouter",
+    },
+    file,
+  );
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({
+      url,
+      method: init?.method || "GET",
+      body: init?.body ? JSON.parse(init.body) : null,
+    });
+    return { ok: true, json: async () => ({ ok: true }) };
+  };
+  const result = await syncModelsIfMismatch({
+    stateDir: dir,
+    bindingsFile: file,
+    env: { GLYPH_AGENT_URL: "http://127.0.0.1:18899" },
+    fetchImpl,
+    agentHealth: {
+      ok: true,
+      body: {
+        models: {
+          shared: { primary: "z-ai/glm-5.3-flash-free", fallback: "" },
+          code: {
+            primary: "z-ai/glm-5.3-flash-free",
+            fallback: "",
+            override: false,
+          },
+          provider: "openrouter",
+          provider_mode: "openrouter",
+          code_provider: "openrouter",
+          code_provider_mode: "openrouter",
+          direct: { openrouter_url: "https://openrouter.ai/api/v1" },
+        },
+      },
+    },
+  });
+  assert.equal(result.ok, true);
+  const post = calls.find((c) => String(c.url).endsWith("/models") && c.method === "POST");
+  assert.ok(post, "expected POST /models");
+  assert.equal(post.body.direct.openrouter_url, "https://api.orcarouter.ai/v1");
+  assert.equal(post.body.direct.openrouter_key, "sk-orca-abc");
+});
+
+test("pushModelsToAgent posts direct.openrouter_url", async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, body: JSON.parse(init.body) });
+    return { ok: true, json: async () => ({ ok: true }) };
+  };
+  const result = await pushModelsToAgent(
+    "http://127.0.0.1:18899",
+    { shared: { primary: "deepseek-v4-flash-vision-exp", fallback: "z-ai/glm-5.3-flash" } },
+    {
+      fetchImpl,
+      direct: {
+        openrouter_url: "https://api.orcarouter.ai/v1",
+        openrouter_key: "sk-orca-abc",
+      },
+    },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(calls[0].body.direct.openrouter_url, "https://api.orcarouter.ai/v1");
+  assert.equal(calls[0].body.direct.openrouter_key, "sk-orca-abc");
+});
+
 test("pushModelsToAgent posts direct.api_key even when empty", async () => {
   const calls = [];
   const fetchImpl = async (url, init) => {
@@ -292,4 +414,40 @@ test("pushModelsToAgent posts direct.api_key even when empty", async () => {
   assert.equal(result.applied, true);
   assert.equal(calls[0].body.direct.api_key, "");
   assert.equal(calls[0].body.direct.url, "https://api.deepseek.com");
+});
+
+test("hopFromModelId: no slash is Direct, slash is Router", () => {
+  assert.equal(hopFromModelId("deepseek-v4-flash-vision-exp"), "direct");
+  assert.equal(hopFromModelId("z-ai/glm-5.3-flash"), "openrouter");
+});
+
+test("probeModelOnAgent sends hop=direct for Vision-Exp", async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, body: JSON.parse(init.body) });
+    return { ok: true, json: async () => ({ ok: true, hop: "direct" }) };
+  };
+  const result = await probeModelOnAgent(
+    "http://127.0.0.1:18899",
+    "deepseek-v4-flash-vision-exp",
+    { fetchImpl },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(calls[0].body.model, "deepseek-v4-flash-vision-exp");
+  assert.equal(calls[0].body.hop, "direct");
+});
+
+test("probeModelOnAgent sends hop=openrouter for slash slug", async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, body: JSON.parse(init.body) });
+    return { ok: true, json: async () => ({ ok: true, hop: "openrouter" }) };
+  };
+  const result = await probeModelOnAgent(
+    "http://127.0.0.1:18899",
+    "z-ai/glm-5.3-flash",
+    { fetchImpl },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(calls[0].body.hop, "openrouter");
 });

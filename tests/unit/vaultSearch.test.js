@@ -56,7 +56,7 @@ describe("vaultSearch session toggle", () => {
     saveVaultSearchOn("s2", false);
     assert.equal(loadVaultSearchOn("s1"), true);
     assert.equal(loadVaultSearchOn("s2"), false);
-    assert.equal(vaultSearchStorageKey("s1"), "glyph-vault-search:s1");
+    assert.equal(vaultSearchStorageKey("s1"), "glyph-vault-search-v2:s1");
   });
 
   it("migrates new → real session", () => {

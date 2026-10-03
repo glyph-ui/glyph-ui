@@ -21,6 +21,9 @@ import { handleDialogTab } from "../utils/focusTrap.js";
  * @param {import("react").RefObject<HTMLElement | null>} [props.initialFocusRef]
  * @param {"left"|"right"} [props.side="right"]
  * @param {"push"|"overlay"} [props.mode="overlay"]
+ * @param {string} [props.closeLabel="Schließen"]  leer = kein Kopf-Schließen
+ * @param {import("react").CSSProperties} [props.style]
+ * @param {import("react").ReactNode} [props.gutter]
  */
 function SideDrawer({
   open,
@@ -35,6 +38,9 @@ function SideDrawer({
   initialFocusRef,
   side = "right",
   mode = "overlay",
+  closeLabel = "Schließen",
+  style,
+  gutter = null,
 }) {
   const panelRef = useRef(null);
   const titleId = useId();
@@ -69,14 +75,19 @@ function SideDrawer({
 
   useEffect(() => {
     if (!open || !present) return undefined;
-    const focusTarget =
-      initialFocusRef?.current ||
-      panelRef.current?.querySelector?.(
-        'input:not([disabled]),button:not([disabled]),[tabindex]:not([tabindex="-1"])',
-      ) ||
-      panelRef.current;
+    const phone =
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 640px), (pointer: coarse)").matches;
+    const focusTarget = phone
+      ? panelRef.current
+      : initialFocusRef?.current ||
+        panelRef.current?.querySelector?.(
+          'input:not([disabled]),button:not([disabled]),[tabindex]:not([tabindex="-1"])',
+        ) ||
+        panelRef.current;
     const id = requestAnimationFrame(() => {
-      focusTarget?.focus?.();
+      panelRef.current && (panelRef.current.scrollTop = 0);
+      focusTarget?.focus?.({ preventScroll: true });
     });
     return () => cancelAnimationFrame(id);
   }, [open, present, initialFocusRef]);
@@ -126,19 +137,25 @@ function SideDrawer({
       data-drawer-open={open ? "true" : "false"}
       data-drawer-side={sideNorm}
       data-drawer-mode={modeNorm}
+      style={style}
     >
+      {gutter}
       <header className="app-drawer-head">
         <div className="app-drawer-head-text">
           {kicker ? <p className="overview-kicker">{kicker}</p> : null}
           <h2 id={titleId}>{title}</h2>
           {meta ? <div className="overview-meta app-drawer-meta">{meta}</div> : null}
         </div>
-        <div className="overview-head-actions app-drawer-head-actions">
-          {headExtra}
-          <button type="button" className="ghost" onClick={onClose}>
-            Schließen
-          </button>
-        </div>
+        {(headExtra || closeLabel) ? (
+          <div className="overview-head-actions app-drawer-head-actions">
+            {headExtra}
+            {closeLabel ? (
+              <button type="button" className="ghost" onClick={onClose}>
+                {closeLabel}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </header>
       <div className="app-drawer-body">{children}</div>
     </aside>

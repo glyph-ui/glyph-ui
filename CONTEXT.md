@@ -15,15 +15,16 @@ Browser-UI für mehrere lokale und Cloud-Agenten über ACP (Agent Client Protoco
 | **Bridge** | Browser ↔ WebSocket ↔ ACP stdio (`grok agent` / glyph-agent-acp). Drei Sitze: `desk` · `phone` · `web`. | `server/index.js`, `server/seats.js`, `server/webSurface.mjs`, `server/glyph-agent-acp.mjs`, `server/acpIdle.mjs` | Sessions, Agents |
 | **Client-Shell** | Chat-UI, Composer, Side-Rail, SideDrawer (Skills/Plan/Buch/Suche). Header-Unterzeile: Term · ACP (Handy nur am Sitz phone). cwd nicht in der Zeile — Tooltip auf Glyph #0.9.0 + Workspace-Button. Verlauf: letzte 40 Nachrichten im DOM, ältere per Button. Graph / Buch / Kalender lazy. **Web-Fläche** auf glyph-ui.com: maximierter °_Agent-Chat, kein Admin-Chrome. | `client/src/App.jsx`, `client/src/main.jsx`, `client/src/utils/messages.js` (`transcriptWindow`), `client/src/utils/webSurface.js` | Bridge-Events |
 | **Palette / Type** | Eine Gold-Hex, eine Danger-Hex, Neutrals via `color-mix`; IBM Plex; Type-Scale fest | `client/src/styles.css` (`:root`) | Client-Shell |
-| **LVL-Bar** | Kontext-Jagd: grau = Füllung, gold = Leseposition; Klick öffnet Legende. Über Soft-Cap (Grok): **Zusammenpressen** → `/compact`. | `ContextLvlBar.jsx` | Client-Shell |
+| **LVL-Bar** | Kontext-Jagd: grau = Füllung, gold = Leseposition; Klick = Legende. Modell = Anbindung Direct-Primary (nicht Router-Reserve). °_Agent **256k**, ^_Code **1M**. Soft-Cap (Grok): **Zusammenpressen**. | `ContextLvlBar.jsx` | Client-Shell |
 | **Arbeitsleiste** | Angedockte Fläche über der LVL-Leiste: Plan, Ordner-Suche, **Aktiver Task**. Gleiches Chrome (Label · Zähler · ×). Kein Mitte-Modal. | `ComposerSheet.jsx`, `PlanBar.jsx`, `VaultSearchHits.jsx` | Client-Shell |
 | **Tool-Karte** | Aufklappbare ACP-Toolzeile (Verb + Ziel, Diff/Ausgabe nach Klick). ^_Code: *Warum erlaubt?* | `client/src/components/ToolCard.jsx`, `client/src/utils/toolCard.js`, `server/toolTitle.mjs` | Bridge `type: tool` |
 | **Composer / Slash** | Eingabe, Slash-Popup, Skills/Commands einfügen. Idle-Senden = Graph-Kopf (Grok Build / °_Agent / ^_Code) mittig 50 %, Stein-Schwanz 8-6-4 nach rechts; Arbeit = Snack. Modus **Chat · Deep Search · Fork · Swarm**: Fork = `x.ai/session/fork` dann ACP `session/fork`; Deep Search = Grok `/deep-research` (andere Köpfe ausgegraut); Swarm = °_Agent/^_Code `POST /chat` `swarm: true`. | `client/src/App.jsx`, `client/src/components/GraphFaces.jsx`, `shared/composerActions.mjs`, `server/glyph-agent-acp.mjs` | Bridge |
 | **Ordner-Suche** | °_Agent: Pixel-Apfel über dem Kopf (rot, ohne extra Höhe). Wiki + TinyFish/Exa immer. Aus = offenes Web. An → `/api/vault/find` Arbeits-Vault, Treffer in der Arbeitsleiste, Default aus, nur aktivierte in den Kontext; leer → KomNet, sonst DGUV. | `VaultSearchToggle.jsx`, `VaultSearchHits.jsx`, `utils/vaultSearch.js`, `server/vaultFlags.mjs` | glyph-agent `POST /vault/find`, `/chat` `vault_search` / `vault_selected` |
+| **Quellen-Fenster** | Klick Vault oder Web: SideDrawer (Chat bleibt, Breite ziehbar). PDF/MD: Begriffsuche, Trefferliste, Obsidian. Web: iframe + Browser. Kurz-Labels. | `SourceViewer.jsx`, `SourceChips.jsx`, `MarkdownBody.jsx`, `utils/sourceLinks.js`, `utils/sourceFind.js`, `utils/pdfText.js` | `/api/vault/file`; pdfjs-Textindex |
 | **Sessions** | Session-Liste, Überblick, **Name** (`/rename`) | `server/sessions.js`, `client/…/CommandOverview.jsx` | Bridge |
 | **Rewind** | Nutzer-Turn und alles danach aus dem Verlauf. Esc Esc, `/rewind`, ↺ an der Nachricht. Dateien bleiben. | `shared/rewind.mjs`, `RewindPicker.jsx`, Bridge `type: rewind` | Sessions, Bridge |
 | **Prompt-History** | ↑ auf leerem Composer: letzte Prompts (lokal, pro Profil) | `utils/promptHistory.js`, `PromptHistoryPopup.jsx` | Composer |
-| **Bindings** | Keys/Host/Modell: zweites Blatt **Anbindung** in der Graph-Legende (nicht die erste Fläche). Polling der Pille: GET `/api/bindings`; POST `/api/models/apply` nur bei Verbindung, Speichern oder mismatch-Klick. | `server/bindings.js`, `GraphLegend.jsx` (`CloudBind`), `utils/bindingsModels.js` | `~/.glyph-ui/bindings.json` |
+| **Bindings** | Keys/Host/Modell: zweites Blatt **Anbindung** in der Graph-Legende (nicht die erste Fläche). Liste: Direct / Router (live/cut · Host); Bearbeiten öffnet Host+Key. Modelle darunter. Polling der Pille: GET `/api/bindings`; POST `/api/models/apply` nur bei Verbindung, Speichern oder mismatch-Klick. | `server/bindings.js`, `GraphLegend.jsx`, `AnbindungSheet.jsx`, `utils/bindingsModels.js` | `~/.glyph-ui/bindings.json` |
 | **Graph** | Vollfenster, folgt App-Theme (Dunkel: pechschwarz; Hell: Papierfeld). Modal: Fokusfalle, Chat `inert` — Rail bleibt bedienbar (Theme, Schließen, Reload). Aktiver Kopf hervorgehoben. Vaults/Workspaces erst beim Öffnen. Ab 8 Ordnern Suche + „Nur verbunden“. Klick → kompakte Legende (Status, Rechte, Nachbarn); Keys hinter Anbindung. | `CableLage.jsx`, `GraphLegend.jsx`, `utils/lageLayout.js`, `utils/focusTrap.js` | Bindings, Vaults, Workspaces |
 | **BindPanel** | Kompakt-Liste im Buch (Fallback) | `BindPanel.jsx`, `useBindResource.js` | Vaults-UI, Workspaces-UI |
 | **Vaults-UI** | Kabelsalat °_Agent | `VaultsPanel.jsx` → Proxy `/api/…` | **glyph-agent** `/vaults` |
@@ -60,8 +61,8 @@ Eine flüchtige, filterbare Befehlsliste, die erscheint, während der Nutzer im 
 _Avoid_: Dropdown (zu generisch), Autocomplete (kann Code-Vorschläge meinen)
 
 **Extensions-Modal**:
-Ein modaler Dialog in Glyph zum Durchsuchen und Auswählen von Erweiterungen (Skills, ggf. Plugins/Hooks) — das Glyph-Gegenstück zu Groks Extensions-Oberfläche.
-_Avoid_: Settings, Preferences, Command-Palette (andere Oberfläche)
+Ein modaler Dialog in Glyph zum Durchsuchen und Auswählen von Erweiterungen (Skills, ggf. Plugins/Hooks) — das Glyph-Gegenstück zu Groks Extensions-Oberfläche. Handy: Einfügen schließt das Panel (Composer sichtbar); gleicher Skill nicht doppelt anhängen. Klick in ein bereits eingefügtes `/name` öffnet das Panel nicht (sonst nicht löschbar). Header: Symbole, kein `···`-Überlaufmenü. Panel schmaler, Suche oben; neue Antworten am **Anfang** der Runde.
+_Avoid_: Settings, Preferences, Command-Palette (andere Oberfläche); Handy-Header nur `···` + Textlabels
 
 **Command-Legend**:
 Hilfe-**Seitenpanel** **Buch** (XOR mit Skills/Plan/Suche): Tabs Handbuch · **Legende** (UI-Doku). Desk an der Rail links, Web Overlay rechts; Chat steht. Dokumentiert Bedienung; führt Skills/Commands **nicht** aus.
@@ -80,8 +81,12 @@ Eine aufklappbare Zeile im Chat für einen ACP-Tool-Aufruf: Verb + Ziel in der Z
 _Avoid_: Tool-Card (EN), Paper-Card, grok-build-web Disclosure; erlaubtes Tool ohne Scope-Hinweis
 
 **Ordner-Suche**:
-Manueller Zugriff auf den **Arbeits-Vault** im Profil **°_Agent**. Pixel-Apfel **über dem Senden-Button** (nicht zwischen + und Chat), ohne die Composer-Höhe zu erhöhen. Minecraft: roter Körper, brauner Stiel, grünes Blatt; inaktiv abgedunkelt; an = Gold-Outline + Puls. **Immer** (Apfel an oder aus): memory-wiki, TinyFish, Exa. Apfel aus: dazu allgemeine Suche, Internet, soziale Netze — nicht KomNet/DGUV. Apfel an: nächste Sendung sucht den Arbeits-Vault, Treffer in der **Arbeitsleiste** über der LVL-Leiste, nie im Chat-Verlauf, jedes Ergebnis startet aus; nur explizit an = Arbeits-Vault in den Kontext; Vault leer → **KomNet** (`komnet.nrw.de`) einmal via Exa+TinyFish; ohne Treffer **DGUV** (`dguv.de`) ebenso. Zustand pro Session (`sessionStorage`). Jobs/Engine ohne Flag bleiben beim B+-Precheck. ACP `vault_search=false` = Wiki + offenes Web; mit Auswahl = Arbeits-Vault-Treffer + Wiki. Kein HTML-Scrape.
-_Avoid_: Arbeits-Vault ohne Apfel; KomNet/DGUV ohne Apfel; memory-wiki hinter den Apfel legen; Apfel zwischen + und Chat; Lupe (Sessions); Treffer als Chat-Nachrichten; Gold-gefüllter Apfel; Treffer-Popup über der Composer-Box; KomNet-HTML direkt; KomNet und DGUV parallel; allgemeine Websuche als Apfel-Fallback
+Manueller Zugriff auf den **Arbeits-Vault** im Profil **°_Agent**. Pixel-Apfel **über dem Senden-Button** (nicht zwischen + und Chat), ohne die Composer-Höhe zu erhöhen. Minecraft: heller roter Körper, brauner Stiel, grünes Blatt — lesbar auf --bg. Idle: **kein Kreis** (wie Send-Raupe). An: **mini-Raupe** krabbelt auf **Ellipse** hinter dem Apfel (oben/unten weiter, links/rechts enger) — Steine 6px, Kopf führt; ab und zu Halt, Kopf wackelt (suchen/essen). Kein Gold-Fill, kein Bahn-Kreis. Kein „sucht in …“-Chip. **Immer** (Apfel an oder aus): memory-wiki, TinyFish, Exa. Apfel aus: dazu allgemeine Suche, Internet, soziale Netze — nicht KomNet/DGUV. Apfel an: nächste Sendung sucht den Arbeits-Vault, Treffer in der **Arbeitsleiste** über der LVL-Leiste, nie im Chat-Verlauf, jedes Ergebnis startet aus; nur explizit an = Arbeits-Vault in den Kontext; Vault leer → **KomNet** (`komnet.nrw.de`) einmal via Exa+TinyFish; ohne Treffer **DGUV** (`dguv.de`) ebenso. Zustand pro Session (`sessionStorage`). Jobs/Engine ohne Flag bleiben beim B+-Precheck. ACP `vault_search=false` = Wiki + offenes Web; mit Auswahl = Arbeits-Vault-Treffer + Wiki. Kein HTML-Scrape.
+_Avoid_: Arbeits-Vault ohne Apfel; KomNet/DGUV ohne Apfel; memory-wiki hinter den Apfel legen; Apfel zwischen + und Chat; Lupe (Sessions); Treffer als Chat-Nachrichten; Gold-gefüllter Apfel; Treffer-Popup über der Composer-Box; KomNet-HTML direkt; KomNet und DGUV parallel; allgemeine Websuche als Apfel-Fallback; „sucht in …“ neben dem Apfel
+
+**Quellen-Fenster**:
+Einsicht rechts: Vault-PDF/Notiz oder Web-URL im SideDrawer (Chat bleibt, Esc/Zurück). PDF/MD: Suche im Fenster, Treffer springen (PDF: Seite; Notiz: Markierung) — eine Zeile: Feld · Zähler · **Vor** · **Weiter**. Vault: Kopf kompakt, **Obsidian** + **Zurück** eine Zeile, mittig. Web: Fuß **Browser** + **Zurück** (Gold-Rand, kein Fill); kurzer Hinweis wenn Einbettung sperrt — kein zweiter Öffnen-Link. Anzeige: Dateiname / `host/…/datei`, Gold-Unterstrich, kein brauner Chip-Hintergrund. ⌘-Klick auf Web = System-Browser. Preview: `?source=web` · `?source=md`.
+_Avoid_: `target=_blank` auf Glyph-Origin; Vollbild-Overlay statt Drawer; volle URL als Linktext; Gold-Fill/Braun-Wash auf Links; Browser+Zurück im Web-Kopf; doppeltes „Im Browser öffnen“
 
 **Rewind**:
 Einen Nutzer-Turn und alles danach aus dem Chat-Verlauf nehmen. Dateien auf Disk bleiben (wie TUI `/rewind`). Einstiege: Esc Esc (idle, leerer Composer), `/rewind` / `/undo`, ↺ an der Nutzer-Nachricht. °_Agent/^_Code: Adapter `session.rewind`. Grok: ACP `x.ai/rewind*` oder Disk-Schnitt + `session/load`.
@@ -164,8 +169,12 @@ UI-Label des grok-Profils (id bleibt **`grok`**). Die Grok-Build-CLI, nicht Grok
 _Avoid_: Dropdown-/Pille-/Graph-Label „Grok“ (ergibt „Grok Grok“)
 
 **Anbindung**:
-Keys, Host-URL und Modelle unter `~/.glyph-ui/bindings.json`. Header-Pille öffnet den **Graph** auf dem aktiven Kopf und das Blatt **Anbindung**. Pille zeigt nur das **eingesetzte** Modell (Kürzel) — Primary→Reserve bleibt Graph/Tooltip. °_Agent / ^_Code: Direct-Key, OpenRouter-Key, Host (`DIRECT_API_URL`) und Modell (ohne Slash = Direct-ID, mit Slash = OpenRouter-Slug) hinter **Anbindung**, nicht auf der ersten Graph-Fläche. **Schreiben gilt sofort** am laufenden Agent — kein Kickstart, kein zweites Terminal. Schlägt der Live-Push fehl, steht das als Fehler, nicht als „Gespeichert“. Ein Direct-Key für beide Köpfe. Grok-OAuth bleibt Terminal (`grok login`).
+Keys, Host-URL und Modelle unter `~/.glyph-ui/bindings.json`. Header-Pille öffnet den **Graph** auf dem aktiven Kopf und das Blatt **Anbindung**. Pille zeigt nur das **eingesetzte** Modell (Kürzel) — Primary→Reserve bleibt Graph/Tooltip. Blatt = **Liste**: Direct und Router je eine Zeile (live/cut · Host); **Bearbeiten** öffnet Host+Key. Modelle (Primary/Reserve) bleiben sichtbar darunter. °_Agent / ^_Code: Direct-Key + Direct-Host (`DIRECT_API_URL`), **Router-Key** + **Router-Host** (`OPENROUTER_URL`) und Modell (ohne Slash = Direct-ID, mit Slash = Router-Slug) hinter **Anbindung**, nicht auf der ersten Graph-Fläche. Router-Host Default `https://openrouter.ai/api/v1`; Orca `https://api.orcarouter.ai/v1`. Env-Namen `OPENROUTER_*` bleiben Technik. **Schreiben gilt sofort** am laufenden Agent — kein Kickstart, kein zweites Terminal. Schlägt der Live-Push fehl, steht das als Fehler, nicht als „Gespeichert“. Ein Direct-Key für beide Köpfe. Grok-OAuth bleibt Terminal (`grok login`).
 _Avoid_: Settings (zu generisch), Login-Dialog (impliziert eingebettetes OAuth), Kalender (nur Grok-Aktivität, oft disabled)
+
+**Router**:
+Slash-Hop hinter Direct: Host + Key in der Anbindung. Default OpenRouter (`https://openrouter.ai/api/v1`); alternativ Orca (`https://api.orcarouter.ai/v1`). Env bleibt `OPENROUTER_URL` / `OPENROUTER_API_KEY`.
+_Avoid_: OpenRouter als UI-Slot-Name; zweites Profil; Auto-Host aus Key-Prefix
 
 **Graph**:
 Vollfenster, kein Bild — folgt App-Theme (Dunkel: pechschwarz/Gold; Hell: Papierfeld/`--bg`, dunkle Schrift, Goldakzente). Modal: Tab bleibt im Graph; Chat `inert`, Rail bleibt bedienbar. Mitte = Glyph-Symbol. Köpfe = Snake-Pixel Grok Build / °_Agent / ^_Code, radial (Grok Build oben, Agent links, Code rechts). Der aktive UI-Kopf ist hervorgehoben (`aria-current`). Klick Kopf → rutscht in die Mitte, zeigt Abhängigkeiten. Erste Legende: Status, Nachbarn, Rechte, An-/Abbindung. Keys/Host/Modell = Blatt **Anbindung**. Ordner (Vaults, Roots) = Kreise; Favorit und aktuell gewählter Ordner = Goldstern (*). Rechte am Knoten: ungebunden = eine Stufe dunkler, keine Linie; lesen = Standardkreis + vier kurze Striche; privat = eine Stufe dunkler + Punkte. Jeder Ordner darf an jeden Kopf, jede Kante eigene Rechte (`heads`: lesen / schreiben / privat / ungebunden). Grok Build startet offen (schreiben), außer Privat — einschränken, nicht erst freigeben. Kanten: Glyph↔Köpfe = Achse (dünn, ~40 % Opacity). Rechte: schreiben solid, lesen gestrichelt, privat gepunktet — pro Kopf; Kanten-Legende sichtbar im Feld. Auswahl eines Ordners: nur dessen Rechte-Kanten voll, Rest stark gedimmt. Labels nur Hover/Selektion; voller Name in der Legende und als `title`. Ab 8 Ordnern: Suche + Filter „Nur verbunden“. Vaults/Workspaces laden erst beim Öffnen. `?graph=`.
@@ -200,8 +209,8 @@ Explizit benannte Arbeit („Baue die Codex-Bridge ein“), nicht die Chat-Sessi
 _Avoid_: Session-Freigabe; Chat-weit; Immer; Recurring-To-do; Prompt-Themenklassifikation; mit **Aufgabe** (Übergabe) verwechseln
 
 **Aufgabe**:
-Manuell übergebene Arbeit. Entsteht nur mit **Beleg** (Meldung + Antwort). Kette an einer Antwort öffnet die **Arbeitsleiste**: Titel + **Was ist zu tun** (`pass`). Landet unter **Plan & Aktivität**. Zielkopf und Artefakt nicht beim Anlegen. **Übernehmen** legt den Startkontext in den Composer. **Fertig** im Plan nur mit Pfad oder Ort — Chat-Belege sind Kontext, kein Ergebnis.
-_Avoid_: Aufgabe ohne Meldung; Session-Sprung; ganze Session übertragen; Recurring-To-do; Task-Freigabe; Auto-Switch des Profils; Fertig ohne Pfad/Ort; Mitte-Modal
+Manuell übergebene Arbeit. Entsteht nur mit **Beleg** (Meldung + Antwort). Kette an einer Antwort öffnet die **Arbeitsleiste**: Titel + **Was ist zu tun** (`pass`). Landet unter **Plan & Aktivität**. Zielkopf und Artefakt nicht beim Anlegen. **Übernehmen** legt den Startkontext in den Composer. **Erledigt** im Plan entfernt die Aufgabe (kein Pfad/Link). Chat-Belege sind Kontext, kein Ergebnis.
+_Avoid_: Aufgabe ohne Meldung; Session-Sprung; ganze Session übertragen; Recurring-To-do; Task-Freigabe; Auto-Switch des Profils; Erledigt als Pfad-Pflicht; erledigte Aufgabe im Plan stehen lassen; Mitte-Modal
 
 **Beleg**:
 Snapshot von Meldung und Antwort an der Aufgabe (plus kompakter Trace, Anhang-Pfade) in `~/.glyph/tasks.json`. Aufklappbar in Leiste und Plan. Kein Zeiger in eine Session — °_Agent speichert keine.
@@ -220,7 +229,7 @@ Art einer Aktion, die eine Freigabe decken darf: Dateiänderung, Test, git_commi
 _Avoid_: Shell-Whitelist als Berechtigung; git commit unter r+w ohne Dialog
 
 **^_Code**:
-Code-Profil (id `_code`): Workspace-Tools, Freigabe in Glyph. Direct `deepseek-v4-flash-vision-exp` für Text und Screenshots, Reserve OpenRouter `deepseek/deepseek-v4-flash-0731`. Dieselbe ACP-Brücke wie `°_Agent` mit `GLYPH_AGENT_MODE=code`.
+Code-Profil (id `_code`): Workspace-Tools, Freigabe in Glyph. Direct `deepseek-v4-flash-vision-exp` für Text und Screenshots, Reserve über den **Router** (OpenRouter oder Orca, Host in der Anbindung). Dieselbe ACP-Brücke wie `°_Agent` mit `GLYPH_AGENT_MODE=code`.
 _Avoid_: Claude-Profil, Anthropic-OAuth; Gemini als ^_Code-Default; Bild-Hop auf ein zweites Modell; r+w als Schreib-Dauerrecht
 
 **°_Agent**:
@@ -232,8 +241,8 @@ Technischer Name: Repo `~/glyph-agent`, Profil-id `glyph-agent`, HTTP-Dienst. In
 _Avoid_: als sichtbares Dropdown-Label
 
 **Cloud-Antwort**:
-Nutzer-tauglicher Name für die Cloud-formulierte Antwort hinter dem Profil `°_Agent`. Technik-Detail „OpenRouter“ gehört nicht in UI-Labels.
-_Avoid_: OpenRouter-Antwort in UI-Strings
+Nutzer-tauglicher Name für die Cloud-formulierte Antwort hinter dem Profil `°_Agent`. Technik-Detail „OpenRouter“ gehört nicht in UI-Labels — der Hop heißt **Router**.
+_Avoid_: OpenRouter-Antwort in UI-Strings; OpenRouter als Slot-Name in der Anbindung
 
 ## Settled decisions (grill 2026-08-05)
 
@@ -335,7 +344,7 @@ _Avoid_: OpenRouter-Antwort in UI-Strings
 - Aufgabe ≠ Task-Freigabe, ≠ Recurring-To-do.
 - SoT `~/.glyph/tasks.json` (glyph-agent `/tasks`, UI-Proxy `/api/tasks`).
 - Zielkopf optional; Default leer. Köpfe: Grok Build, ^_Code, °_Agent, Codex Build. **Kein** Kopf Analyse — Analyse bleibt Status.
-- Neu: **Was ist zu tun** Pflicht (`pass`); **Fertig** im Plan nur mit Pfad oder Ort. Chat-Belege bleiben Kontext.
+- Neu: **Was ist zu tun** Pflicht (`pass`). **Erledigt** im Plan entfernt die Aufgabe (kein Pfad). Chat-Belege bleiben Kontext. Agent-`done` per PATCH braucht weiter `artifact`. ^_Code: Tool **TaskFinish** (kein Workspace-Write).
 - Neu braucht **Meldung und Antwort** (Beleg-Snapshot). Ohne Paar keine Aufgabe.
 - Beleg in Übergabe-Leiste und Plan aufklappbar. Kein Sprung in die Original-Session (°_Agent speichert keine).
 - Ketten-Button nur mit vorangehender Nutzer-Meldung. Arbeitsleiste: Beleg + Titel + Was ist zu tun. Zielkopf und Artefakt nicht dort. Übernehmen in den Composer oder später im Plan. Preview: `?handoff=demo`.

@@ -14,6 +14,8 @@ import {
   handoffTitleFrom,
   hasHandoffPair,
   headLabel,
+  leftoverDoneTasks,
+  planListTasks,
   sanitizeEvidence,
   statusLabel,
   tasksEndpointError,
@@ -85,11 +87,24 @@ describe("evidenceClip", () => {
 });
 
 describe("canMarkDone", () => {
-  it("requires an artifact path, not chat evidence", () => {
+  it("PATCH-done still needs an artifact; Plan-Erledigt deletes instead", () => {
     assert.equal(canMarkDone({ evidence: { prompt: "x", answer: "done" } }), false);
     assert.equal(canMarkDone({ artifact: "  " }), false);
     assert.equal(canMarkDone({ artifact: "client/src/App.jsx" }), true);
     assert.equal(cleanArtifact("  a.md  "), "a.md");
+  });
+});
+
+describe("planListTasks", () => {
+  it("drops done Aufgaben from the Plan list", () => {
+    const items = [
+      { id: "a", status: "new" },
+      { id: "b", status: "done" },
+      { id: "c", status: "building" },
+    ];
+    assert.deepEqual(planListTasks(items).map((t) => t.id), ["a", "c"]);
+    assert.deepEqual(leftoverDoneTasks(items).map((t) => t.id), ["b"]);
+    assert.deepEqual(planListTasks(null), []);
   });
 });
 

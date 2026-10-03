@@ -22,7 +22,7 @@ Browser (React)  ──WebSocket──►  Node-Bridge  ──stdio ACP──►
 | Profil | Typ | Auth | Fähigkeiten (in Glyph) |
 |--------|-----|------|-------------------------|
 | **grok** (Standard) | Cloud | OAuth | Sessions ✅ · Deep Search ✅ · Swarm ✗ · Aktivität ✅ · Voice ✅ |
-| **^_Code** | Lokal + Cloud (Direct Vision-Exp) | Direct + OpenRouter-Reserve | Read/Write/Shell mit Freigabe (Einmal / Auftrag / Task) · Swarm ✅ |
+| **^_Code** | Lokal + Cloud (Direct Vision-Exp) | Direct + Router-Reserve (OpenRouter oder Orca) | Read/Write/Shell mit Freigabe (Einmal / Auftrag / Task) · Swarm ✅ |
 | **°_Agent** (id `glyph-agent`) | Lokal + Cloud-Antwort | — | VaultFind, Web-Recherche, Cloud-Antwort (Engine); Swarm ✅; Deep Search ✗ |
 
 > 📊 Grafische Abläufe (warum + wie jedes Profil): `docs/glyph-profile-diagrams.html`
@@ -41,7 +41,7 @@ laufen in Glyph — die „Intelligenz“ steckt im gewählten Agenten.
 
 Für Power-User mit lokalem Zugriff auf eigene Dateien (z. B. Mac Mini). Kein Cloud-Hosting von Glyph.
 
-In der App: **Buch** → Tabs **Handbuch** · **Befehle** · **Anbindung** (kein extra Leisten-Icon).
+In der App: **Buch** → Tabs **Handbuch** · **Legende**. Keys: Graph → Kopf → **Anbindung**.
 
 **Seitenpanel:** Befehle & Skills, Plan & Aktivität, Buch, Suche & Sessions — Desk links an der Rail, Web Overlay rechts; Chat-Breite bleibt. **Graph** = Vollfläche (Ausnahme). `/` im Composer öffnet dasselbe Skills-Panel. Nur ein Inhalts-Panel zugleich.
 
@@ -54,7 +54,7 @@ In der App: **Buch** → Tabs **Handbuch** · **Befehle** · **Anbindung** (kein
 |--------|---------------|
 | **grok** (Default) | `grok` im PATH + eingeloggt (`grok login` / `~/.grok/auth.json`) |
 | **^_Code** | `OPENROUTER_API_KEY` + glyph-agent-Dienst (`:18899`) |
-| **°_Agent** | Lokaler Dienst `server.py` auf `127.0.0.1:18899` (`~/glyph-agent`); OpenRouter für Cloud-Antwort |
+| **°_Agent** | Lokaler Dienst `server.py` auf `127.0.0.1:18899` (`~/glyph-agent`); Router (OpenRouter oder Orca) für Cloud-Antwort |
 
 ### Erster Start (Mac & Windows)
 
@@ -68,9 +68,9 @@ npm start
 
 Browser: **http://127.0.0.1:5174**
 
-1. **Buch → Anbindung**: Status der Profile, Keys speichern.
+1. **Graph → Anbindung**: Direct / Router (live/cut), Keys schreiben.
 2. **Grok:** im Terminal `grok login` (OAuth — nicht in der Maske).
-3. **^_Code / °_Agent:** OpenRouter-Key im Tab Anbindung (oder `.env`); Engine starten.
+3. **^_Code / °_Agent:** Graph → Anbindung: Direct / Router (live/cut), Bearbeiten = Host+Key; Modelle darunter. Engine starten.
 4. Header: Profil wählen → **Kette** verbinden → chatten.
 
 **Windows:** gleich mit Node + npm. macOS-only: LaunchAgent, Dock-Icon, `Open Glyph.command` — weglassen.
@@ -80,8 +80,8 @@ Firewall: localhost/Node erlauben, falls der Browser die UI nicht erreicht.
 
 | Was | Wo |
 |-----|-----|
-| Status Grok / Code / Agent | UI **Buch → Anbindung** |
-| `OPENROUTER_API_KEY`, `XAI_API_KEY` | Tab Anbindung speichert unter `~/.glyph-ui/bindings.json` (lokal, mode 0600) |
+| Status Grok / Code / Agent | Graph → Kopf → **Anbindung** (Direct / Router live/cut) |
+| `OPENROUTER_API_KEY`, `XAI_API_KEY` | Anbindung speichert unter `~/.glyph-ui/bindings.json` (lokal, mode 0600) |
 | Grok OAuth | nur Terminal: `grok login` → `~/.grok/auth.json` |
 | Alternativ Keys | Repo-`.env` (siehe `.env.example`) — hat Vorrang vor leerem Store beim Start |
 
@@ -140,6 +140,23 @@ Stift = neuer Chat (eigene ACP-Session auf dem Web-Sitz). Verlauf des Macs bleib
 Header (begrenzt): Stift · Befehle · Theme · Schloss · **UI neu laden**. Kein Ketten-Icon / **Beenden** — auf der Domain startet der Sitz von selbst; Tab zu = Browser, nicht Agent. Hängt die Fläche: **UI neu laden** (Anmeldung bleibt).
 
 **Nicht v1:** native iOS-App, WhatsApp-Anbindung an Glyph.
+
+#### HSEQ-Knopf vom Arbeits-PC (Obsidian Sync)
+
+Der Knopf **Jetzt verarbeiten** in `00 ▶ HSEQ verarbeiten` schreibt am Arbeits-PC nur eine
+Trigger-Notiz in den Vault (`00 Arbeitsfluss/_hseq-trigger.md`). Kein HTTP, kein Passwort,
+kein `127.0.0.1` — deshalb egal, was das Firmennetz blockt. Obsidian Sync bringt die Notiz
+zum Mac; der Server liest sie (Takt `GLYPH_HSEQ_POLL_MS`, Default 5 s) und startet denselben
+recurring-Job wie um 18:00.
+
+| Schritt | Datei / Ort |
+|---------|-------------|
+| Knopf schreibt | `HSEQ Sync/00 Arbeitsfluss/_hseq-trigger.md` |
+| Mac merkt letzten Token | `~/.glyph-ui/hseq-trigger.json` |
+| Mac schreibt Ergebnis | `HSEQ Sync/00 Arbeitsfluss/_hseq-status.md` |
+
+Rollen strikt getrennt (Knopf schreibt Trigger, Mac schreibt Status) → keine Sync-Konflikte.
+Aktivierung: `GLYPH_HSEQ_VAULT` auf den Vault setzen; ohne die Variable bleibt der Wächter aus.
 
 ---
 
@@ -373,7 +390,7 @@ Symbol: **4 Kästchen** in der linken Leiste. Öffnet ein **Seitenpanel** (Desk 
 
 ### Tab Plan (Aufgaben + wiederkehrende To-dos)
 
-**Aufgaben:** Kette an einer Antwort → Arbeitsleiste: Beleg (Meldung + Antwort, aufklappbar) + Titel + **Was ist zu tun**. Ohne das Paar keine Aufgabe. Kein Sprung in die Session. Landet unter Plan & Aktivität. **Übernehmen** legt den Startkontext in den Composer — kein automatischer Kopfwechsel. **Fertig** nur mit Pfad oder Ort. Aufgabe ≠ Task-Freigabe.
+**Aufgaben:** Kette an einer Antwort → Arbeitsleiste: Beleg (Meldung + Antwort, aufklappbar) + Titel + **Was ist zu tun**. Ohne das Paar keine Aufgabe. Kein Sprung in die Session. Landet unter Plan & Aktivität. **Übernehmen** legt den Startkontext in den Composer — kein automatischer Kopfwechsel. **Erledigt** nimmt die Aufgabe aus dem Plan (kein Pfad). Aufgabe ≠ Task-Freigabe.
 
 Täglich/wöchentlich · **Fertig wenn** · Pause · Einmal jetzt · Löschen. Nach erfolgreichem Lauf: **Fertig** löscht die To-do. Leerlauf (`LEER`) ist nicht Erfolg.
 
@@ -484,6 +501,9 @@ In der App: Symbol **Befehle** (filterbare Legende).
 | `GLYPH_UI_STATE_DIR` | `~/.glyph-ui` | UI-State (z. B. Closed-Log, Web-Passwort) |
 | `GLYPH_WEB_PASSWORD` | Datei `~/.glyph-ui/web-password` | Web-Tor für glyph-ui.com |
 | `GLYPH_WEB_HOSTS` | `glyph-ui.com,www.glyph-ui.com` | Extra-Hostnames für die Web-Fläche |
+| `GLYPH_HSEQ_VAULT` | — | Obsidian-Vault für den Sync-Auslöser (leer = aus) |
+| `GLYPH_HSEQ_TRIGGER_FILE` | — | Trigger-Notiz direkt statt über den Vault |
+| `GLYPH_HSEQ_POLL_MS` | `5000` | Lesetakt der Trigger-Notiz |
 
 Beispiel:
 

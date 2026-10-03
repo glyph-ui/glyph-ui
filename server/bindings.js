@@ -23,15 +23,25 @@ export const BINDING_KEY_IDS = [
 ];
 
 /** Optional non-secret settings. */
-export const BINDING_SETTING_IDS = ["GLYPH_AGENT_URL", "DIRECT_API_URL"];
+export const BINDING_SETTING_IDS = [
+  "GLYPH_AGENT_URL",
+  "DIRECT_API_URL",
+  "OPENROUTER_URL",
+];
+
+/** Default Slash-Hop (OpenRouter). Orca: https://api.orcarouter.ai/v1 */
+export const DEFAULT_ROUTER_URL = "https://openrouter.ai/api/v1";
 
 /**
  * Provider modes (UI-Radio). Stored in bindings.json → env → glyph-agent.
  * - direct     : Direct-API (Primary), kein Fallback
- * - openrouter : nur OpenRouter
- * - hybrid     : Direct primär → OpenRouter-Fallback (Default)
+ * - openrouter : nur Router (OpenRouter oder Orca, je nach OPENROUTER_URL)
+ * - hybrid     : Direct primär → Router-Fallback (Default)
+ * - local      : lokaler Server (Ternary Bonsai 2 27B, 127.0.0.1:8080).
+ *                Kein Cloud-Anteil. Lebensdauer des Modellprozesses:
+ *                server/localModel.mjs (start/stop/status).
  */
-export const PROVIDER_MODES = ["direct", "openrouter", "hybrid"];
+export const PROVIDER_MODES = ["direct", "openrouter", "hybrid", "local"];
 
 export function normalizeProvider(value) {
   const v = String(value || "").trim().toLowerCase();
@@ -514,6 +524,7 @@ export function buildAgentPush(saved, body = {}) {
   const direct = {};
   const dk = String(keys.DIRECT_API_KEY || "").trim();
   const url = String(settings.DIRECT_API_URL || "").trim();
+  const orUrl = String(settings.OPENROUTER_URL || "").trim();
   const ork = String(keys.OPENROUTER_API_KEY || "").trim();
   const clearingDirect =
     Object.prototype.hasOwnProperty.call(body, "DIRECT_API_KEY") && !dk;
@@ -522,6 +533,7 @@ export function buildAgentPush(saved, body = {}) {
   if (dk) direct.api_key = dk;
   else if (clearingDirect) direct.api_key = "";
   if (url) direct.url = url;
+  if (orUrl) direct.openrouter_url = orUrl;
   if (ork) direct.openrouter_key = ork;
   else if (clearingOr) direct.openrouter_key = "";
 
@@ -531,6 +543,7 @@ export function buildAgentPush(saved, body = {}) {
     "DIRECT_API_KEY",
     "DIRECT_API_URL",
     "OPENROUTER_API_KEY",
+    "OPENROUTER_URL",
   ].some((id) => Object.prototype.hasOwnProperty.call(body, id));
   const hasShared = Boolean(saved?.models?.shared?.primary);
   const push = Boolean(
@@ -569,9 +582,14 @@ export async function pushModelsToAgent(baseUrl, models, opts = {}) {
     if (Object.prototype.hasOwnProperty.call(opts.direct, "openrouter_key")) {
       d.openrouter_key = String(opts.direct.openrouter_key || "").trim();
     }
+    if (Object.prototype.hasOwnProperty.call(opts.direct, "openrouter_url")) {
+      d.openrouter_url = String(opts.direct.openrouter_url || "").trim();
+    }
     if (Object.keys(d).length) payload.direct = d;
   }
-  if (!payload.shared && !payload.direct) {
+  // Provider-only push ist gültig: im lokalen Modus hängen die Modelle nicht
+  // am Cloud-Paar — der Provider wählt sein eigenes Modell (LOCAL_MODEL).
+  if (!payload.shared && !payload.direct && !payload.provider) {
     return { ok: false, error: "Kein shared.primary gesetzt", applied: false };
   }
   const base = String(baseUrl || "http://127.0.0.1:18899").replace(/\/$/, "");
@@ -622,11 +640,18 @@ export async function pushModelsToAgent(baseUrl, models, opts = {}) {
  * @param {string} modelId
  * @param {{ fetchImpl?: typeof fetch, timeoutMs?: number }} [opts]
  */
+/** Slash in der ID = Router-Hop; ohne Slash = Direct. */
+export function hopFromModelId(modelId) {
+  return String(modelId || "").includes("/") ? "openrouter" : "direct";
+}
+
 export async function probeModelOnAgent(baseUrl, modelId, opts = {}) {
   const fetchImpl = opts.fetchImpl || globalThis.fetch;
   const timeoutMs = opts.timeoutMs ?? 60000;
   const base = String(baseUrl || "http://127.0.0.1:18899").replace(/\/$/, "");
   const url = `${base}/models/probe`;
+  const model = String(modelId || "").trim();
+  const hop = opts.hop || hopFromModelId(model);
   if (!fetchImpl) {
     return { ok: false, error: "fetch unavailable", url };
   }
@@ -636,7 +661,11 @@ export async function probeModelOnAgent(baseUrl, modelId, opts = {}) {
     const res = await fetchImpl(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: String(modelId || "").trim() }),
+      body: JSON.stringify({
+        model,
+        hop,
+        kind: opts.kind || "agent",
+      }),
       signal: ctrl.signal,
     });
     let body = null;
@@ -721,6 +750,36 @@ export async function resolveModelContextWindow(modelId, opts = {}) {
  * If bindings models differ from agent health, push (Q27).
  * @param {object} [opts]
  */
+function directFromBindingsFile(file) {
+  const keys = file?.keys && typeof file.keys === "object" ? file.keys : {};
+  const settings =
+    file?.settings && typeof file.settings === "object" ? file.settings : {};
+  const direct = {};
+  const url = String(settings.DIRECT_API_URL || "").trim();
+  const orUrl = String(settings.OPENROUTER_URL || "").trim();
+  const dk = String(keys.DIRECT_API_KEY || "").trim();
+  const ork = String(keys.OPENROUTER_API_KEY || "").trim();
+  if (url) direct.url = url;
+  if (orUrl) direct.openrouter_url = orUrl;
+  if (dk) direct.api_key = dk;
+  if (ork) direct.openrouter_key = ork;
+  return Object.keys(direct).length ? direct : undefined;
+}
+
+function liveRouterUrl(healthBody) {
+  const snap = healthBody?.models || healthBody || {};
+  return String(snap.direct?.openrouter_url || "").replace(/\/$/, "");
+}
+
+export function routerHostMismatch(file, healthBody) {
+  const want = String(file?.settings?.OPENROUTER_URL || "")
+    .trim()
+    .replace(/\/$/, "");
+  if (!want) return false;
+  const have = liveRouterUrl(healthBody);
+  return want !== have;
+}
+
 export async function syncModelsIfMismatch(opts = {}) {
   const env = opts.env || process.env;
   const stateDir =
@@ -746,8 +805,9 @@ export async function syncModelsIfMismatch(opts = {}) {
       error: health.detail,
     };
   }
-  if (!modelsMismatch(file.models, health.body)) {
-    // Modelle in sync — Provider-Modi trotzdem prüfen/pushen
+  const hostOff = routerHostMismatch(file, health.body);
+  if (!modelsMismatch(file.models, health.body) && !hostOff) {
+    // Modelle + Router-Host in sync — Provider-Modi trotzdem prüfen/pushen
     const provOk = await syncProviderIfMismatch(file, health.body);
     if (!provOk.skipped) {
       return {
@@ -760,9 +820,10 @@ export async function syncModelsIfMismatch(opts = {}) {
     }
     return { ok: true, skipped: true, reason: "in_sync", health: health.body };
   }
-  // Modelle weichen ab → Modelle + beide Provider-Modi pushen
+  // Modelle oder Router-Host weichen ab → Modelle + Direct/Router-Creds pushen
   const modelPush = await pushModelsToAgent(agentUrl, file.models, {
     fetchImpl: opts.fetchImpl,
+    direct: directFromBindingsFile(file),
   });
   if (!modelPush.ok) {
     return {
@@ -986,6 +1047,20 @@ export async function buildBindingsStatus(opts = {}) {
             ? "bindings"
             : "default",
       },
+      OPENROUTER_URL: {
+        value:
+          String(
+            env.OPENROUTER_URL || file.settings.OPENROUTER_URL || "",
+          ).trim() || DEFAULT_ROUTER_URL,
+        source: env.OPENROUTER_URL
+          ? file.settings.OPENROUTER_URL &&
+            env.OPENROUTER_URL === file.settings.OPENROUTER_URL
+            ? "bindings"
+            : "env"
+          : file.settings.OPENROUTER_URL
+            ? "bindings"
+            : "default",
+      },
       GLYPH_AGENT_URL: {
         value: agentUrl,
         source: env.GLYPH_AGENT_URL
@@ -1056,8 +1131,8 @@ export async function buildBindingsStatus(opts = {}) {
             id: "openrouter",
             ok: openrouter.set,
             detail: openrouter.set
-              ? `OPENROUTER_API_KEY ${openrouter.masked} (${openrouter.source}) · Fallback`
-              : "OPENROUTER_API_KEY als Fallback (optional)",
+              ? `Router-Key ${openrouter.masked} (${openrouter.source}) · Reserve`
+              : "Router-Key als Reserve (optional)",
           },
           {
             id: "agent_service",
@@ -1067,7 +1142,7 @@ export async function buildBindingsStatus(opts = {}) {
               : `${agentHealth.url} · ${agentHealth.detail}`,
           },
         ],
-        hint: "Direct-Key (DeepSeek/Grok/…) + laufender glyph-agent. OpenRouter nur Fallback.",
+        hint: "Direct-Key (DeepSeek/Grok/…) + laufender glyph-agent. Router nur Reserve.",
       },
       "glyph-agent": {
         id: "glyph-agent",
@@ -1093,11 +1168,11 @@ export async function buildBindingsStatus(opts = {}) {
             id: "openrouter",
             ok: openrouter.set,
             detail: openrouter.set
-              ? `OpenRouter-Fallback ${openrouter.masked}`
-              : "OPENROUTER_API_KEY als Fallback",
+              ? `Router-Reserve ${openrouter.masked}`
+              : "Router-Key als Reserve",
           },
         ],
-        hint: "Engine: glyph-agent :18899 · Direct-Key für Cloud-Antwort, OpenRouter nur Fallback.",
+        hint: "Engine: glyph-agent :18899 · Direct-Key für Cloud-Antwort, Router nur Reserve.",
       },
       voice: voiceProfile,
     },

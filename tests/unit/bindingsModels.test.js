@@ -8,9 +8,15 @@ import assert from "node:assert/strict";
 import {
   applyLiveStatus,
   buildModelsPatch,
+  hopFromModelId,
+  hopPill,
+  hopRow,
+  hostShort,
   isCloudModelProfile,
   modelHudFromBindings,
   modelsForHead,
+  providerLabel,
+  routerKind,
 } from "../../client/src/utils/bindingsModels.js";
 
 describe("modelsForHead", () => {
@@ -67,7 +73,7 @@ describe("buildModelsPatch", () => {
     assert.equal(buildModelsPatch({ absorb: "agent", primary: "  ", fallback: "" }), null);
   });
 
-  it("code override is a slash OpenRouter slug", () => {
+  it("code override is a slash Router slug", () => {
     assert.deepEqual(
       buildModelsPatch({
         absorb: "code",
@@ -86,6 +92,103 @@ describe("buildModelsPatch", () => {
     assert.deepEqual(buildModelsPatch({ absorb: "code", primary: "", fallback: "x" }), {
       models: { code: null },
     });
+  });
+});
+
+describe("hopFromModelId", () => {
+  it("no slash is Direct", () => {
+    assert.equal(hopFromModelId("deepseek-v4-flash-vision-exp"), "direct");
+  });
+  it("slash is Router", () => {
+    assert.equal(hopFromModelId("z-ai/glm-5.3-flash"), "openrouter");
+    assert.equal(hopFromModelId("deepseek/deepseek-v4-flash-0731"), "openrouter");
+  });
+});
+
+describe("hostShort", () => {
+  it("strips protocol and path", () => {
+    assert.equal(hostShort("https://api.deepseek.com"), "api.deepseek.com");
+    assert.equal(hostShort("https://openrouter.ai/api/v1"), "openrouter.ai");
+    assert.equal(hostShort("https://api.orcarouter.ai/v1"), "api.orcarouter.ai");
+  });
+  it("empty is empty", () => {
+    assert.equal(hostShort(""), "");
+    assert.equal(hostShort(null), "");
+  });
+  it("tolerates missing protocol", () => {
+    assert.equal(hostShort("api.deepseek.com"), "api.deepseek.com");
+  });
+});
+
+describe("routerKind", () => {
+  it("names OpenRouter and Orca hosts", () => {
+    assert.equal(routerKind("https://openrouter.ai/api/v1"), "openrouter");
+    assert.equal(routerKind("https://api.orcarouter.ai/v1"), "orca");
+    assert.equal(routerKind("https://gateway.example/v1"), "custom");
+  });
+});
+
+describe("hopPill", () => {
+  it("Direct without slash, Router with slash", () => {
+    assert.equal(hopPill("deepseek-v4-flash-vision-exp"), "Direct");
+    assert.equal(hopPill("z-ai/glm-5.3-flash"), "Router");
+  });
+});
+
+describe("hopRow", () => {
+  it("Direct is live when key is set", () => {
+    const row = hopRow(
+      {
+        keys: { DIRECT_API_KEY: { set: true, masked: "…abcd" } },
+        settings: {
+          DIRECT_API_URL: { value: "https://api.deepseek.com", source: "store" },
+        },
+      },
+      "direct",
+    );
+    assert.equal(row.id, "direct");
+    assert.equal(row.label, "Direct");
+    assert.equal(row.live, true);
+    assert.equal(row.state, "live");
+    assert.equal(row.hostShort, "api.deepseek.com");
+    assert.equal(row.source, "store");
+    assert.equal(row.masked, "…abcd");
+  });
+
+  it("Router is cut without key and defaults OpenRouter host", () => {
+    const row = hopRow({ keys: {}, settings: {} }, "router");
+    assert.equal(row.id, "router");
+    assert.equal(row.label, "Router");
+    assert.equal(row.live, false);
+    assert.equal(row.state, "cut");
+    assert.equal(row.kind, "openrouter");
+    assert.equal(row.hostShort, "openrouter.ai");
+  });
+
+  it("Router kind follows Orca host", () => {
+    const row = hopRow(
+      {
+        keys: { OPENROUTER_API_KEY: { set: true, masked: "…orca" } },
+        settings: {
+          OPENROUTER_URL: {
+            value: "https://api.orcarouter.ai/v1",
+            source: "store",
+          },
+        },
+      },
+      "router",
+    );
+    assert.equal(row.kind, "orca");
+    assert.equal(row.live, true);
+    assert.equal(row.hostShort, "api.orcarouter.ai");
+  });
+});
+
+describe("providerLabel", () => {
+  it("names the slash-hop Router, not OpenRouter", () => {
+    assert.equal(providerLabel("openrouter"), "Router");
+    assert.equal(providerLabel("hybrid", { isPeak: true }), "Hybrid · Peak → Router");
+    assert.equal(providerLabel("direct"), "Direkt");
   });
 });
 

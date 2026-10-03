@@ -86,9 +86,23 @@ export function cleanArtifact(value) {
   return String(value || "").trim().slice(0, 1000);
 }
 
-/** Fertig nur mit Pfad oder Ort. Chat-Belege zählen nicht. */
+/** Agent-PATCH auf done braucht weiter ein Artefakt. Plan-Erledigt löscht die Aufgabe. */
 export function canMarkDone(task) {
   return Boolean(cleanArtifact(task?.artifact));
+}
+
+export function isOpenTask(task) {
+  return task?.status !== "done";
+}
+
+/** Plan-Tab: erledigte Aufgaben sind raus, kein Archiv. */
+export function planListTasks(items) {
+  return (Array.isArray(items) ? items : []).filter(isOpenTask);
+}
+
+/** Reste mit status=done — aus der SoT löschen, nicht durchstreichen. */
+export function leftoverDoneTasks(items) {
+  return (Array.isArray(items) ? items : []).filter((task) => task?.status === "done");
 }
 
 export function compactTrace(trace) {

@@ -25,3 +25,13 @@ export const GLYPH_BUILD =
 
 /** Header mark: 90 → #0.9.0, 112 → #1.1.2. */
 export const GLYPH_BUILD_LABEL = glyphBuildLabel(GLYPH_BUILD);
+
+/**
+ * Bauzeit des Bundles („02.10., 23:20"), beim Build eingebacken. Nur Anzeige —
+ * macht sichtbar, welchen Build eine geöffnete Seite wirklich hat (Cache-Fall).
+ * @type {string}
+ */
+export const GLYPH_BUILD_STAMP =
+  typeof __GLYPH_STAMP__ !== "undefined" && __GLYPH_STAMP__
+    ? String(__GLYPH_STAMP__)
+    : "";

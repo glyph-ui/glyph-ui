@@ -120,8 +120,10 @@ export function buildAgentProfiles(env = process.env) {
       id: "grok",
       label: "Grok Build",
       bin: String(env.GROK_BIN || "grok"),
-      // Match TUI default: no --reasoning-effort override (model default).
-      args: ["agent", "--always-approve", "--no-leader", "stdio"],
+      // Denkaufwand medium statt Modell-Default high: kuerzere Turns.
+      // Messung 2026-09-08: bei high waren 69% der Ausgabe-Token Reasoning
+      // (668 Token/Antwort, davon 463 Denken); Modellzeit ~47% der Wanduhr.
+      args: ["agent", "--always-approve", "--no-leader", "--reasoning-effort", "medium", "stdio"],
       via: "bin",
       capabilities: { deepSearch: true, swarm: false, activity: true, sessionList: true, sessionHistory: true },
     },

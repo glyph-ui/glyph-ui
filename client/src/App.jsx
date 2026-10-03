@@ -6,11 +6,12 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AssistantText } from "./components/AssistantText.jsx";
 import { AssistantMeta } from "./components/AssistantMeta.jsx";
+import { SourceChips } from "./components/SourceChips.jsx";
+import { SourceViewer } from "./components/SourceViewer.jsx";
+import { onOpenVaultSource } from "./utils/sourceOpen.js";
+import { setKnownVaults } from "./utils/sourceLinks.js";
 import { PlanBar } from "./components/PlanBar.jsx";
 import { ContextLvlBar } from "./components/ContextLvlBar.jsx";
-import { SnackBoard } from "./components/Snack.jsx";
-import { SendCaterpillar as SendSnake } from "./components/GraphFaces.jsx";
-import { profileHeadId } from "./utils/lageLayout.js";
 import { CommandOverview } from "./components/CommandOverview.jsx";
 import { ExtensionsModal } from "./components/ExtensionsModal.jsx";
 import { PromptHistoryPopup } from "./components/PromptHistoryPopup.jsx";
@@ -22,16 +23,20 @@ import { TaskHandoffDialog } from "./components/TaskHandoffDialog.jsx";
 import {
   findSlashHighlightRanges,
   insertSlashCommand,
+  isDuplicateSlashInsert,
   isHiddenAgentCommand,
   isUiReloadItem,
   isUiReloadSlash,
   rankCatalog,
+  shouldOpenSkillsFromComposer,
   slashTokenAt,
   withUiReloadCommand,
 } from "./utils/slash.js";
 import { hardReloadUi } from "./utils/reloadUi.js";
 import { applyComposerMirrorMetrics } from "./utils/composerMirror.js";
+import { scrollChildIntoView } from "./utils/scrollChild.js";
 import {
+  canFork,
   canSwarm,
   composerActionLabel,
   resolveComposerAction,
@@ -80,8 +85,10 @@ import {
   goldFillRatio,
   isModelCompatibleWithProfile,
   PROFILE_DEFAULT_WINDOWS,
+  PROMPT_OVERHEAD_TOKENS,
   resolveContextWindow,
   scrollMetrics,
+  withPromptOverhead,
 } from "./utils/contextMeter.js";
 import { ToolCard } from "./components/ToolCard.jsx";
 import { PermissionDialog } from "./components/PermissionDialog.jsx";
@@ -89,6 +96,7 @@ import { WebGate } from "./components/WebGate.jsx";
 import { WebPasswordDialog } from "./components/WebPasswordDialog.jsx";
 import { ActiveTaskBar } from "./components/ActiveTaskBar.jsx";
 import ProviderSwitch from "./components/ProviderSwitch.jsx";
+import LocalModelToggle from "./components/LocalModelToggle.jsx";
 import { GRANT_DEMO_REQ, TASK_DEMO } from "./utils/codeGrants.js";
 import {
   TRANSCRIPT_WINDOW,
@@ -126,14 +134,13 @@ import {
   normalizePreviewPayload,
   toWireSelected,
   vaultFindHttpError,
-  vaultSendIntent,
-  hubSearchScopeLabel,
 } from "./utils/vaultSearch.js";
 import { LageFallback } from "./components/LageFallback.jsx";
 import { pickRecorderMime, textForSpeech, speakWithBrowser } from "./utils/voice.js";
 import {
   GLYPH_BUILD,
   GLYPH_BUILD_LABEL,
+  GLYPH_BUILD_STAMP,
   GLYPH_VERSION,
   glyphBuildLabel,
 } from "./version.js";
@@ -326,7 +333,7 @@ export default function App() {
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const modeMenuRef = useRef(null);
   const fileInputRef = useRef(null);
-  /** °_Agent: manuelle Ordner-Suche. Default aus; Zustand pro Session. */
+  /** °_Agent: Ordner-Suche (Apfel) Default aus. An = Allowlist-Hubs. */
   const [vaultSearchOn, setVaultSearchOn] = useState(false);
   const [vaultHits, setVaultHits] = useState(null);
   const [vaultHitOn, setVaultHitOn] = useState(() => new Set());
@@ -423,6 +430,7 @@ export default function App() {
     if (kind === "book" && opts.tab) {
       setLegendTab(opts.tab);
     }
+    composerRef.current?.blur?.();
     setDrawer(kind);
   }, []);
   const closeDrawer = useCallback(() => setDrawer(null), []);
@@ -433,6 +441,52 @@ export default function App() {
   /** Desk: left beside rail; Web: forced overlay-right (no chat squash). */
   const drawerSide = webSurface ? "right" : "left";
   const drawerMode = "overlay";
+  /** Zitierte Quelldatei im Trennfenster (null = geschlossen). */
+  const [sourceFile, setSourceFile] = useState(null);
+  const closeSource = useCallback(() => setSourceFile(null), []);
+  // Pfade im Antworttext (MarkdownBody) öffnen dasselbe Fenster.
+  useEffect(() => onOpenVaultSource(setSourceFile), []);
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    try {
+      const src = new URLSearchParams(window.location.search).get("source");
+      if (src === "web") {
+        setSourceFile({
+          kind: "web",
+          url: "https://example.com/",
+          title: "example.com",
+        });
+      } else if (src === "md") {
+        setSourceFile({
+          kind: "md",
+          path: "/memory-wiki/concepts/preview.md",
+          title: "Betriebsanweisung Drehmaschine",
+          vault: "memory-wiki",
+        });
+      }
+    } catch {
+      /* */
+    }
+    return undefined;
+  }, []);
+  // Vault-Namen einmal laden: Pfade mit Leerzeichen („ASI, BS. UWS, QM, EM/…")
+  // lassen sich nur damit sicher im Antworttext erkennen.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/vaults")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!alive || !d) return;
+        const names = (Array.isArray(d.vaults) ? d.vaults : [])
+          .map((v) => (typeof v === "string" ? v : v?.name))
+          .filter(Boolean);
+        setKnownVaults(names);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   useEffect(() => {
     if (!headerMenuOpen) return undefined;
@@ -491,6 +545,13 @@ export default function App() {
     scrollRatio: 1,
     hasOverflow: false,
   });
+
+  /**
+   * Lokales Modell (27B): Zustand + echtes Kontextfenster.
+   * Steht hier oben, weil der LVL-Balken weiter unten damit rechnet.
+   */
+  const [localModel, setLocalModel] = useState(null);
+  const [localAction, setLocalAction] = useState(false);
 
   // —— Voice (xAI primary · OpenRouter fallback) ——
   const [voiceAvailable, setVoiceAvailable] = useState(false);
@@ -1022,6 +1083,31 @@ export default function App() {
     });
   }, []);
 
+  /** New turn: show the start of this message, don't follow the stream to the end. */
+  const scrollTurnStart = useCallback(
+    (msgId) => {
+      const run = () => {
+        const list = listRef.current;
+        if (!list || !msgId) return;
+        const msg = list.querySelector(
+          `[data-msg-id="${CSS.escape(String(msgId))}"]`,
+        );
+        if (!msg) return;
+        programmaticScrollRef.current = true;
+        setPinned(false);
+        scrollChildIntoView(list, msg, { block: "start", pad: 12 });
+        requestAnimationFrame(() => {
+          programmaticScrollRef.current = false;
+        });
+      };
+      requestAnimationFrame(() => {
+        run();
+        requestAnimationFrame(run);
+      });
+    },
+    [setPinned],
+  );
+
   /**
    * @param {boolean | { force?: boolean }} [opts]
    * force=true: re-pin + follow (send / session open / "Neue Ausgabe").
@@ -1243,22 +1329,6 @@ export default function App() {
     if (!wsRef.current || wsRef.current.readyState !== 1) return;
 
     drainingRef.current = true;
-    const queuedPicked =
-      Array.isArray(next.vaultSelected) && next.vaultSelected.length > 0;
-    if (
-      next.vaultSearch &&
-      !queuedPicked &&
-      next.action !== "fork" &&
-      next.action !== "deep-search"
-    ) {
-      queueRef.current = queueRef.current.slice(1);
-      setQueue([...queueRef.current]);
-      void runVaultSearchRef.current?.(next.text || "");
-      window.setTimeout(() => {
-        drainingRef.current = false;
-      }, 100);
-      return;
-    }
     // Mark busy immediately so a second drain cannot double-send
     busyRef.current = true;
     queueRef.current = queueRef.current.slice(1);
@@ -1788,10 +1858,11 @@ export default function App() {
       const wire =
         action === "fork" ? [] : toWireAttachments(attachments || []);
 
+      const userId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       setMessages((prev) => [
         ...prev,
         {
-          id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          id: userId,
           role: "user",
           text: displayText,
           streaming: false,
@@ -1817,8 +1888,8 @@ export default function App() {
         setHistoryOpen(false);
         setHistoryIndex(null);
       }
-      // User just sent — pin and follow the new turn
-      scrollToBottom({ force: true });
+      // Read the new turn from the top; streaming must not yank to the end.
+      scrollTurnStart(userId);
 
       if (action === "deep-search") {
         wsRef.current.send(
@@ -1858,7 +1929,7 @@ export default function App() {
         );
       }
     },
-    [scrollToBottom, agent?.id],
+    [scrollTurnStart, agent?.id],
   );
 
   const dispatchQueuedRef = useRef(dispatchPayload);
@@ -2013,16 +2084,7 @@ export default function App() {
 
   runVaultSearchRef.current = runVaultSearch;
 
-  // Glyph-Momente: Apfel-Flug-Trigger (Ref, weil send() früher definiert ist als flyAppleTo)
-  const flyAppleRef = useRef(null);
-
   const send = useCallback((explicitText) => {
-    // Apfel fliegt beim echten Senden vom Composer zum Send-Kopf.
-    const composerEl = document.querySelector(".composer textarea, .composer [contenteditable='true']");
-    if (composerEl && typeof flyAppleRef.current === "function") {
-      const r = composerEl.getBoundingClientRect();
-      flyAppleRef.current(r.left + r.width / 2 - 6, r.top + r.height / 2 - 6);
-    }
     // Optional explicit text avoids stale closure when callers setInput then send
     // in the same tick (e.g. empty-state starter chips).
     const text = (
@@ -2100,53 +2162,22 @@ export default function App() {
       );
       return;
     }
+    if (action === "fork" && agent?.id && !canFork(agent.id)) {
+      setError(
+        `Fork läuft über ^_Code und Grok Build (aktiv: ${agent.label || "Agent"})`,
+      );
+      return;
+    }
 
     const wantsVault =
       isAgentProfile && action === "chat" && vaultSearchOn && Boolean(body);
 
-    if (wantsVault) {
-      const intent = vaultSendIntent({
-        appleOn: true,
-        searchBusy: vaultSearchBusy,
-        query: text,
-        hitsQuery: vaultHits?.query,
-        hitsStatus: vaultHits?.status,
-        error: vaultSearchError,
-        lastPickedCount: vaultLastPickedRef.current.length,
-        lastPickedQuery: vaultLastPickedQueryRef.current,
-      });
-      if (intent === "abort") {
-        abortVaultSearch();
-        return;
-      }
-      if (intent === "abort-then-search") {
-        abortVaultSearch();
-        vaultLastPickedRef.current = [];
-        vaultLastPickedQueryRef.current = "";
-        setInput("");
-        void runVaultSearch(text);
-        return;
-      }
-      if (intent === "search") {
-        vaultLastPickedRef.current = [];
-        vaultLastPickedQueryRef.current = "";
-        setInput("");
-        void runVaultSearch(text);
-        return;
-      }
-    }
-
+    // Apfel AN = automatische Suche läuft direkt beim Senden; der manuelle Picker
+    // blockiert NIE mehr. Gewählte Treffer (falls vorhanden) sind nur Zusatzkontext.
     const displayText = buildDisplayText(action, body, atts);
     const livePicked = wantsVault
       ? toWireSelected(selectedHits(vaultHits?.hits || [], vaultHitOn))
       : [];
-    if (livePicked.length > 0) {
-      vaultLastPickedRef.current = livePicked;
-      vaultLastPickedQueryRef.current = text;
-    }
-    const picked =
-      livePicked.length > 0 ? livePicked : wantsVault ? vaultLastPickedRef.current : [];
-    const useVaultContext = picked.length > 0;
     const payload = {
       id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       text: body,
@@ -2155,8 +2186,8 @@ export default function App() {
       ...(atts.length ? { attachments: atts } : {}),
       ...(isAgentProfile && action === "chat"
         ? {
-            vaultSearch: useVaultContext,
-            ...(useVaultContext ? { vaultSelected: picked } : {}),
+            vaultSearch: vaultSearchOn,
+            ...(livePicked.length ? { vaultSelected: livePicked } : {}),
           }
         : {}),
     };
@@ -2196,10 +2227,8 @@ export default function App() {
     dispatchPayload,
     vaultSearchOn,
     vaultSearchBusy,
-    vaultSearchError,
     vaultHits,
     vaultHitOn,
-    runVaultSearch,
     abortVaultSearch,
   ]);
 
@@ -2575,7 +2604,7 @@ export default function App() {
           // /api/context cannot re-read a leftover grok signals.json (500k).
           setSessionId(null);
           // Drop sticky model from previous profile so LVL window follows the
-          // new profile default (e.g. glyph-agent → 1M, not leftover grok 500k).
+          // new profile default (e.g. glyph-agent → 256k, not leftover grok 500k).
           traceRef.current = null;
           const r = resolveContextWindow("", id);
           setContextInfo({
@@ -2707,6 +2736,8 @@ export default function App() {
   const caps = agent?.capabilities;
   const canDeepSearch = caps ? Boolean(caps.deepSearch) : true;
   const canSwarmAction = caps ? Boolean(caps.swarm) : true;
+  // Fork: ^_Code und Grok Build — im °_Agent gesperrt (keine Session-Übersicht).
+  const canForkAction = canFork(agent?.id);
   // Session-Lupe (persistent) nur bei sessionList:true (Grok); Aktivität nur bei activity:true.
   const canBrowseSessions = caps ? Boolean(caps.sessionList) : true;
   const canSeeActivity = caps ? Boolean(caps.activity) : true;
@@ -2733,6 +2764,7 @@ export default function App() {
     [agentLabel],
   );
   const swarmBlockedReason = `Swarm läuft über °_Agent und ^_Code (aktiv: ${agentLabel})`;
+  const forkBlockedReason = `Fork läuft über ^_Code und Grok Build (aktiv: ${agentLabel})`;
 
   /** Tooltip for the agent picker: command + why some controls are greyed. */
   const agentPickTitle = useMemo(() => {
@@ -2753,7 +2785,10 @@ export default function App() {
     if (!canSwarmAction && sendAction === "swarm") {
       setSendAction("chat");
     }
-  }, [canDeepSearch, canSwarmAction, sendAction]);
+    if (!canForkAction && sendAction === "fork") {
+      setSendAction("chat");
+    }
+  }, [canDeepSearch, canSwarmAction, canForkAction, sendAction]);
 
   // Same for panels that are open when the agent changes under them.
   // Kalender-Panel bleibt offen (Tab Plan gilt für alle Profile; Aktivität ggf. deaktiviert).
@@ -2795,7 +2830,6 @@ export default function App() {
   /** Demo forces the working send face so the stuffed board is visible. */
   const showWorking = isWorking || snackDemo;
   const showStuffed = snackStuffed || snackDemo;
-  const sendHeadFace = profileHeadId(agent?.id) || "grok";
 
   // Last assistant-trace model (this session). Not the configured primary→reserve pair.
   const lastTraceModel = useMemo(() => {
@@ -2809,6 +2843,35 @@ export default function App() {
 
   // Effective model for window map (last assistant trace beats session signals)
   const effectiveModel = lastTraceModel || contextInfo.model || "";
+
+  /**
+   * Lokaler Kopf: eigenes Kontextfenster. Der 27B läuft mit 16k, nicht mit der
+   * 256k-Skala von °_Agent — sonst zeigt der Balken ~1 %, während der Kontext
+   * fast voll ist. Der Wert kommt live vom Modellserver (/api/local/status).
+   */
+  const isLocalHead =
+    String(modelHud?.provider || "") === "local" ||
+    Boolean(localModel?.providerIsLocal);
+  const meterWindow =
+    isLocalHead && Number(localModel?.contextWindow) > 0
+      ? Number(localModel.contextWindow)
+      : isLocalHead
+        ? 16_384
+        : contextInfo.window;
+
+  /**
+   * Unsichtbarer Prompt-Anteil (System-Prompt + Precheck + Werkzeuge).
+   * Erst ab der ersten Nachricht: ein leeres Fenster zeigt 0 %, danach die
+   * reale Last. Bei Grok (CLI) gibt es diesen Prompt-Aufbau nicht.
+   */
+  const meterOverhead =
+    messages.length === 0
+      ? 0
+      : isLocalHead
+        ? PROMPT_OVERHEAD_TOKENS.local
+        : isCloudModelProfile(agent?.id || "")
+          ? PROMPT_OVERHEAD_TOKENS.cloud
+          : 0;
   const grokHudText = useMemo(() => {
     const short = shortModelLabel(effectiveModel);
     return short === "—" ? "CLI" : short;
@@ -2822,12 +2885,14 @@ export default function App() {
   }, [messages]);
 
   const contextFill = useMemo(() => {
-    const used =
+    const base =
       contextInfo.estimated || contextInfo.used == null
         ? estimatedUsed
         : contextInfo.used;
-    return contextFillRatio(used, contextInfo.window);
-  }, [contextInfo, estimatedUsed]);
+    // Unsichtbarer Prompt-Anteil mitrechnen (siehe meterOverhead oben).
+    const withOverhead = withPromptOverhead(base, meterOverhead);
+    return contextFillRatio(withOverhead, meterWindow);
+  }, [contextInfo, estimatedUsed, meterWindow, meterOverhead]);
 
   const goldFill = useMemo(
     () =>
@@ -2839,6 +2904,11 @@ export default function App() {
     if (contextInfo.estimated || contextInfo.used == null) return estimatedUsed;
     return contextInfo.used;
   }, [contextInfo, estimatedUsed]);
+
+  const meterUsed = useMemo(
+    () => withPromptOverhead(displayUsed, meterOverhead),
+    [displayUsed, meterOverhead],
+  );
 
   // ~ when used is client-estimated (no signals) — window may still be exact
   const displayEstimated =
@@ -3075,7 +3145,7 @@ export default function App() {
     if (cwd) lines.push(cwd);
     lines.push(
       GLYPH_BUILD_LABEL
-        ? `UI ${GLYPH_BUILD_LABEL} · v${GLYPH_VERSION}`
+        ? `UI ${GLYPH_BUILD_LABEL} · v${GLYPH_VERSION}${GLYPH_BUILD_STAMP ? ` · Build ${GLYPH_BUILD_STAMP}` : ""}`
         : `UI v${GLYPH_VERSION}`,
     );
     if (bridgeMeta) {
@@ -3111,6 +3181,76 @@ export default function App() {
       /* ignore */
     }
   }, [agent?.id]);
+
+  /**
+   * Lokales Modell (Ternary Bonsai 2 27B).
+   * Der Prozess belegt ~8 GB, deshalb wird sein Zustand gepollt (schneller,
+   * solange er startet) und über ProviderSwitch / LocalModelToggle bedient.
+   */
+  const refreshLocalModel = useCallback(async () => {
+    try {
+      const res = await fetch("/api/local/status");
+      if (res.ok) setLocalModel(await res.json());
+    } catch {
+      /* Brücke nicht erreichbar */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isCloudModelProfile(agent?.id || "")) return undefined;
+    void refreshLocalModel();
+    const ms = localModel?.state === "starting" ? 1500 : 10000;
+    const id = window.setInterval(() => void refreshLocalModel(), ms);
+    return () => window.clearInterval(id);
+  }, [agent?.id, localModel?.state, refreshLocalModel]);
+
+  /** 27B wecken (dauert ~16 s; der Server antwortet sofort, wir pollen). */
+  const handleLocalStart = useCallback(async () => {
+    setLocalAction(true);
+    try {
+      await fetch("/api/local/start", { method: "POST" }).catch(() => {});
+      void refreshLocalModel();
+    } finally {
+      setLocalAction(false);
+    }
+  }, [refreshLocalModel]);
+
+  /** 27B schlafen legen — gibt die ~8 GB frei. */
+  const handleLocalSleep = useCallback(async () => {
+    setLocalAction(true);
+    try {
+      await fetch("/api/local/stop", { method: "POST" }).catch(() => {});
+      void refreshLocalModel();
+    } finally {
+      setLocalAction(false);
+    }
+  }, [refreshLocalModel]);
+
+  /**
+   * Web-Fläche: ein Schalter für „lokal an/aus".
+   * Ausschalten legt das Modell wirklich schlafen — der wirksamste Schutz
+   * gegen ein dauerhaft belegtes Mac mini.
+   */
+  const handleLocalToggle = useCallback(
+    async (enabled) => {
+      setLocalAction(true);
+      try {
+        await fetch("/api/local/select", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled }),
+        }).catch(() => {});
+        await fetch(enabled ? "/api/local/start" : "/api/local/stop", {
+          method: "POST",
+        }).catch(() => {});
+        void refreshLocalModel();
+        void refreshModelHud();
+      } finally {
+        setLocalAction(false);
+      }
+    },
+    [refreshLocalModel, refreshModelHud],
+  );
 
   /** Read-only poll for the model pill. Writes: connect, Graph-save, mismatch-Klick. */
   useEffect(() => {
@@ -3150,19 +3290,32 @@ export default function App() {
   const handleProviderChange = useCallback(
     async (mode) => {
       const kind = agent?.id === "_code" ? "code" : "agent";
-      const body = { provider: mode, kind };
       try {
-        await fetch("/api/bindings", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
+        if (mode === "local") {
+          // Lokaler Kopf: über den eigenen, engen Endpunkt setzen (so geht es
+          // auch auf der Web-Fläche, wo /api/bindings gesperrt ist) und wecken.
+          await fetch("/api/local/select", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled: true, kind }),
+          });
+          await fetch("/api/local/start", { method: "POST" }).catch(() => {});
+          void refreshLocalModel();
+        } else {
+          await fetch("/api/bindings", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider: mode, kind }),
+          });
+          // Der Modellprozess bleibt wach (schneller Rückwechsel) und schläft
+          // über das Auto-Schlafen ein; von Hand über den Menüpunkt.
+        }
       } catch {
         /* ignore */
       }
       void refreshModelHud();
     },
-    [agent?.id, refreshModelHud],
+    [agent?.id, refreshModelHud, refreshLocalModel],
   );
 
   /** Stale UI vs running bridge — only then surface a banner. */
@@ -3393,16 +3546,28 @@ export default function App() {
     [input, resizeComposer],
   );
 
-  const syncSlashFromComposer = useCallback((text, cursor) => {
+  const syncSlashFromComposer = useCallback((text, cursor, { typing = false } = {}) => {
     const token = slashTokenAt(text, cursor);
     if (!token) {
       setSlashOpen(false);
       setSlashQuery("");
       return;
     }
-    // P5: `/` opens the Skills side drawer (one source of truth — no SlashPopup).
+    if (drawer === "skills") {
+      setSlashQuery(token.query);
+      return;
+    }
+    if (
+      !shouldOpenSkillsFromComposer(text, cursor, {
+        typing,
+        skills: skillCatalog,
+        commands: commandCatalog,
+      })
+    ) {
+      return;
+    }
     openDrawer("skills", { query: token.query });
-  }, [openDrawer]);
+  }, [openDrawer, drawer, skillCatalog, commandCatalog]);
 
   // Cmd/Ctrl+K → Extensions-Modal
   useEffect(() => {
@@ -3428,41 +3593,6 @@ export default function App() {
     const t = setTimeout(() => setSnackAlive(false), 780);
     return () => clearTimeout(t);
   }, [showWorking, snackAlive]);
-
-  // Glyph-Momente (2026-08-30): Prompt-Apfel fliegt beim Senden zum Kopf.
-  const [appleFly, setAppleFly] = useState(null); // {x, y} Endpoint-Offset (dx,dy)
-  const flyAppleTo = useCallback((fromX, fromY) => {
-    const sendRect = document.querySelector("button.send")?.getBoundingClientRect();
-    if (!sendRect) return;
-    const dx = sendRect.left + sendRect.width / 2 - (fromX + 6);
-    const dy = sendRect.top + sendRect.height / 2 - (fromY + 6);
-    setAppleFly({ x: dx, y: dy, startX: fromX, startY: fromY });
-    setTimeout(() => setAppleFly(null), 600);
-  }, []);
-  flyAppleRef.current = flyAppleTo;
-
-  // Ausspucken: Nach dem Working (Apfel hüpft vom Kopf in den Chat) — nur wenn
-  // VORHER wirklich gearbeitet wurde (nicht beim Mount). Fixed overlay (Button
-  // clippt mit overflow:hidden — innerhalb wäre der Apfel unsichtbar).
-  const [appleSpit, setAppleSpit] = useState(null); // {x, y} — Start am Send-Kopf
-  const wasWorkingRef = useRef(false);
-  useEffect(() => {
-    if (showWorking) {
-      wasWorkingRef.current = true;
-      return undefined;
-    }
-    if (!wasWorkingRef.current) return undefined;
-    wasWorkingRef.current = false;
-    const sendRect = document.querySelector("button.send")?.getBoundingClientRect();
-    if (sendRect) {
-      setAppleSpit({
-        x: sendRect.left + sendRect.width * 0.72,
-        y: sendRect.top + sendRect.height * 0.75,
-      });
-    }
-    const t = setTimeout(() => setAppleSpit(null), 950);
-    return () => clearTimeout(t);
-  }, [showWorking]);
 
   // Fehler: Augen weg — App.setError kennt die Raupe nicht, also über error-State.
   const errorSeenRef = useRef("");
@@ -3665,7 +3795,6 @@ export default function App() {
                       <IconCompose size={18} />
                     </button>
                   </div>
-                  <span className="top-actions-sep" aria-hidden="true" />
                   <div className="top-actions-group" data-group="tools" title="Tools">
                     <button
                       type="button"
@@ -3677,7 +3806,6 @@ export default function App() {
                       <IconCommands size={18} />
                     </button>
                   </div>
-                  <span className="top-actions-sep" aria-hidden="true" />
                   <div className="top-actions-group top-actions-group--system" data-group="system" title="System">
                     <button
                       type="button"
@@ -3810,9 +3938,22 @@ export default function App() {
                 isPeak={Boolean(modelHud?.isPeak)}
                 mismatch={Boolean(modelHud?.mismatch)}
                 disabled={isWorking || agentSwitching}
+                localState={localModel?.state || "sleeping"}
+                localBusy={localAction}
+                cloudOk={modelHud?.cloudOk !== false}
                 onChange={(mode) =>
                   void handleProviderChange(mode)
                 }
+                onSleep={() => void handleLocalSleep()}
+              />
+            ) : null}
+            {webSurface && isCloudModelProfile(agent?.id || "") ? (
+              <LocalModelToggle
+                active={Boolean(localModel?.providerIsLocal)}
+                state={localModel?.state || "sleeping"}
+                busy={localAction}
+                disabled={isWorking || agentSwitching}
+                onToggle={(enabled) => void handleLocalToggle(enabled)}
               />
             ) : null}
             {headerControls.quit ? (
@@ -3996,7 +4137,7 @@ export default function App() {
                       className="empty-starter-chip"
                       onClick={() => {
                         const prompt =
-                          "Erklär Apfel und Skills/Befehle auf Nutzerebene: Apfel über dem Senden-Kopf bei °_Agent — aus = allgemeine Suche/Web, an = nächste Frage sucht im Arbeits-Ordner/Vault, Treffer in der Leiste zum Anklicken (nicht automatisch alles in den Kontext), Wiki läuft ohnehin mit; höchstens Fachquellen wenn Ordner leer. Skills & Befehle: Menü „Befehle und Skills“ / Slash /, Auswahl fügt /name in den Composer (sendet nicht allein); Buch → Legende erklärt UI. Nutze Wiki-Konzepte falls vorhanden. Keine Ports, Pfade, Auth-, Endpoint- oder Technik-Internals.";
+                          "Erklär Apfel und Skills/Befehle auf Nutzerebene: Apfel über dem Senden-Knopf bei °_Agent — aus = allgemeine Suche/Web, an = nächste Frage sucht im Arbeits-Ordner/Vault, Treffer in der Leiste zum Anklicken (nicht automatisch alles in den Kontext), Wiki läuft ohnehin mit; höchstens Fachquellen wenn Ordner leer. Skills & Befehle: Menü „Befehle und Skills“ / Slash /, Auswahl fügt /name in den Composer (sendet nicht allein); Buch → Legende erklärt UI. Nutze Wiki-Konzepte falls vorhanden. Keine Ports, Pfade, Auth-, Endpoint- oder Technik-Internals.";
                         send(prompt);
                       }}
                     >
@@ -4223,11 +4364,6 @@ export default function App() {
                               {roleLabel}
                               {m.streaming ? " …" : ""}
                             </span>
-                            {formatMsgClock(m.at) ? (
-                              <time className="msg-time" dateTime={new Date(m.at).toISOString()}>
-                                {formatMsgClock(m.at)}
-                              </time>
-                            ) : null}
                           </div>
                           {m.text || m.steps?.length || m.drafts?.length ? (
                             <AssistantText
@@ -4239,7 +4375,25 @@ export default function App() {
                             />
                           ) : null}
                           {copyActions}
+                          {m.trace?.sources?.vault ||
+                          m.trace?.sources?.web ||
+                          (Array.isArray(m.trace?.sources) && m.trace.sources.length) ? (
+                            <SourceChips
+                              sources={m.trace.sources.vault}
+                              web={
+                                m.trace.sources.web ||
+                                (Array.isArray(m.trace.sources) ? m.trace.sources : undefined)
+                              }
+                              onOpen={setSourceFile}
+                            />
+                          ) : null}
                           {m.trace ? <AssistantMeta trace={m.trace} /> : null}
+                          {/* Zeitstempel unten — analog zur Prompt-Bubble */}
+                          {formatMsgClock(m.at) ? (
+                            <time className="msg-time" dateTime={new Date(m.at).toISOString()}>
+                              {formatMsgClock(m.at)}
+                            </time>
+                          ) : null}
                         </>
                       )}
                     </article>
@@ -4268,18 +4422,6 @@ export default function App() {
         </div>
 
         <footer className="composer composer--grok">
-          {appleFly ? (
-            <span
-              className="apple-fly"
-              aria-hidden="true"
-              style={{
-                left: `${appleFly.startX ?? 0}px`,
-                top: `${appleFly.startY ?? 0}px`,
-                "--apple-fly-x": `${appleFly.x}px`,
-                "--apple-fly-y": `${appleFly.y}px`,
-              }}
-            />
-          ) : null}
           {activeTask &&
           (agent?.id === "_code" || agent?.id === "code" || activeTask.grant_id === "demo") ? (
             <ActiveTaskBar
@@ -4389,8 +4531,9 @@ export default function App() {
               contextFill={contextFill}
               goldFill={goldFill}
               softCapRatio={(contextInfo.softCapPercent || 80) / 100}
-              used={displayUsed}
-              windowTokens={contextInfo.window}
+              used={meterUsed}
+              windowTokens={meterWindow}
+              overhead={meterOverhead}
               model={effectiveModel || contextInfo.model}
               estimated={displayEstimated}
               animateKey={sessionId || agent?.id || "new"}
@@ -4407,7 +4550,6 @@ export default function App() {
                 on={vaultSearchOn}
                 disabled={!connected}
                 onToggle={toggleVaultSearch}
-                scopeLabel={hubSearchScopeLabel()}
               />
             ) : null}
           </div>
@@ -4521,8 +4663,14 @@ export default function App() {
                   rows={1}
                   onChange={(e) => {
                     const v = e.target.value;
+                    const it = e.nativeEvent?.inputType || "";
+                    const typing =
+                      it.startsWith("insert") ||
+                      (!it && v.length >= input.length);
                     setInput(v);
-                    syncSlashFromComposer(v, e.target.selectionStart ?? v.length);
+                    syncSlashFromComposer(v, e.target.selectionStart ?? v.length, {
+                      typing,
+                    });
                     requestAnimationFrame(resizeComposer);
                   }}
                   onScroll={(e) => {
@@ -4716,12 +4864,15 @@ export default function App() {
                     ].map((opt) => {
                       const blocked =
                         (opt.id === "deep-search" && !canDeepSearch) ||
-                        (opt.id === "swarm" && !canSwarmAction);
+                        (opt.id === "swarm" && !canSwarmAction) ||
+                        (opt.id === "fork" && !canForkAction);
                       const active = sendAction === opt.id;
                       const blockedTitle =
                         opt.id === "swarm"
                           ? swarmBlockedReason
-                          : unavailableFor("Deep Search");
+                          : opt.id === "fork"
+                            ? forkBlockedReason
+                            : unavailableFor("Deep Search");
                       return (
                         <button
                           key={opt.id}
@@ -4771,13 +4922,6 @@ export default function App() {
                 <IconMic size={15} />
               </button>
               <div className="composer-send-stack">
-              {appleSpit ? (
-                <span
-                  className="send-spit-apple"
-                  aria-hidden="true"
-                  style={{ left: `${appleSpit.x}px`, top: `${appleSpit.y}px` }}
-                />
-              ) : null}
               <button
                 type="button"
                 className={`send${showWorking ? " send--working" : " send--idle"}${
@@ -4858,24 +5002,20 @@ export default function App() {
               >
                 <span className="send-face send-face--head" aria-hidden="true">
                   <span className="send-icon">
-                    <SendSnake face={sendHeadFace} />
+                    {/* Goldener Pfeil nach oben — nur die Linie, kein Rahmen. */}
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" aria-hidden="true">
+                      <path
+                        d="M12 19V6M12 6l-6 6M12 6l6 6"
+                        stroke="currentColor"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
                   </span>
                 </span>
                 <span className="send-face send-face--snack" aria-hidden="true">
-                  {(showWorking || snackAlive) && (
-                    <span className="send-snack">
-                      <SnackBoard
-                        running={showWorking || snackAlive}
-                        stuffed={showStuffed}
-                        onStopClick={() => {
-                          // Demo board is visual-only; real working state must Abbruch
-                          if (snackDemo) return;
-                          if (cancelling) return;
-                          void cancelTurn();
-                        }}
-                      />
-                    </span>
-                  )}
+                  {(showWorking || snackAlive) && <span className="send-stop" />}
                 </span>
               </button>
               </div>
@@ -4932,6 +5072,13 @@ export default function App() {
           />
         </Suspense>
       ) : null}
+      <SourceViewer
+        file={sourceFile}
+        open={Boolean(sourceFile)}
+        onClose={closeSource}
+        side="right"
+        mode="overlay"
+      />
       <ExtensionsModal
         open={showExtensions}
         onClose={closeDrawer}
@@ -4954,11 +5101,15 @@ export default function App() {
             el && typeof el.selectionStart === "number"
               ? el.selectionStart
               : input.length;
+          const name = String(item.name || "").replace(/^\//, "");
+          if (isDuplicateSlashInsert(input, cursor, name)) {
+            if (opts.close) closeDrawer();
+            return;
+          }
           const token = slashTokenAt(input, cursor);
           if (token) {
             applySlashInsert(item.name);
           } else {
-            const name = String(item.name || "").replace(/^\//, "");
             const inserted = `/${name} `;
             const next =
               input.slice(0, cursor) + inserted + input.slice(cursor);
@@ -4974,7 +5125,7 @@ export default function App() {
               }
             });
           }
-          // Stay open by default; „Einfügen & zu“ passes close:true (handled in modal)
+          // Stay open on desk; mobile closes so the Composer is visible.
           if (opts.close) closeDrawer();
         }}
       />

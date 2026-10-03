@@ -34,6 +34,8 @@ export const CONTEXT_WINDOWS = {
   "claude-3-7-sonnet": 200_000,
   "sonnet-5": 1_000_000,
   "sonnet 5": 1_000_000,
+  "deepseek/deepseek-v4.1-flash": 1_000_000,
+  "deepseek-v4.1-flash": 1_000_000,
   "deepseek/deepseek-v4-flash-vision-exp": 1_000_000,
   "deepseek-v4-flash-vision-exp": 1_000_000,
   "deepseek/deepseek-v4-flash": 1_000_000,
@@ -51,8 +53,52 @@ export const PROFILE_DEFAULT_WINDOWS = {
   claude: 1_000_000, // legacy alias → ^_Code
   _code: 1_000_000,
   code: 1_000_000,
-  "glyph-agent": 1_000_000,
+  "glyph-agent": 256_000, // search chat; 1M is for ^_Code
 };
+
+/**
+ * Lokale Modelle (Ternary Bonsai 2 27B, llama.cpp) haben ein VIEL kleineres
+ * Fenster als die Cloud-Modelle. Diese Map sticht den 256k-Default von
+ * °_Agent, sonst zeigt der LVL-Balken ~1 % an, während der Kontext fast voll
+ * ist. Der laufende Server liefert den echten Wert über /api/local/status
+ * (contextWindow) — das hier ist der Fallback.
+ */
+export const LOCAL_CONTEXT_WINDOWS = {
+  "bonsai-2-27b-uncensored": 16_384,
+  bonsai: 16_384,
+  "ternary-bonsai-2-27b": 16_384,
+  "bonsai-2-27b": 16_384,
+};
+
+/**
+ * Unsichtbarer Prompt-Anteil, den der LVL-Balken sonst nicht sieht.
+ *
+ * Der Balken zählt nur den sichtbaren Chat-Text. Das Modell bekommt aber bei
+ * JEDEM Aufruf zusätzlich: System-Prompt + Precheck-Kontext + Werkzeug-
+ * Ergebnisse. Beim lokalen Kopf gemessen (~569 Token kurze Rolle + Werkzeuge,
+ * ~300 Precheck, ~400 Werkzeuge) — rund 1.250 Token.
+ *
+ * Ohne diesen Aufschlag zeigt der Balken bei 16k erst ~92 %, während die
+ * Anfrage real schon an der Kontextgrenze scheitert.
+ */
+export const PROMPT_OVERHEAD_TOKENS = {
+  /** Lokales Modell (Bonsai 2 27B, 16k). */
+  local: 1250,
+  /** Cloud-Kopf: voller Prompt (~17.000 Zeichen) — bei 256k/1M aber kaum sichtbar. */
+  cloud: 4300,
+};
+
+/**
+ * Rechenwert des Balkens: sichtbarer Text + unsichtbarer Prompt-Anteil.
+ * @param {number} used
+ * @param {number} overhead
+ * @returns {number}
+ */
+export function withPromptOverhead(used, overhead) {
+  const u = Number(used) || 0;
+  const o = Number(overhead) || 0;
+  return Math.max(0, u + o);
+}
 
 /**
  * Normalize a model id for map lookup.
@@ -129,6 +175,26 @@ export function resolveContextWindow(model, profile) {
   const pid = String(profile || "")
     .trim()
     .toLowerCase();
+  const profileKey =
+    pid === "claude" || pid === "code" || pid === "^_code" ? "_code" : pid;
+  // Lokales Modell zuerst: sein Fenster (16k) muss den 256k-Default von
+  // °_Agent ueberstimmen. Cloud-Verhalten bleibt unveraendert.
+  const localId = normalizeModelId(model);
+  if (localId && LOCAL_CONTEXT_WINDOWS[localId] != null) {
+    return {
+      window: LOCAL_CONTEXT_WINDOWS[localId],
+      source: "map",
+      matchedKey: localId,
+    };
+  }
+  // °_Agent = Suche: 256k LVL-Skala. 1M bleibt ^_Code.
+  if (profileKey === "glyph-agent") {
+    return {
+      window: PROFILE_DEFAULT_WINDOWS["glyph-agent"],
+      source: "profile",
+      matchedKey: "glyph-agent",
+    };
+  }
   let id = normalizeModelId(model);
   if (id && pid && !isModelCompatibleWithProfile(model, profile)) {
     id = "";
@@ -232,17 +298,28 @@ export function formatTokenCount(n) {
  * Level digit = floor(pct/10) clamped 0..10. `~` when estimated and pct > 0.
  * Empty → `LVL 0 · 0%` (no tilde even if estimated).
  *
+ * Mit `opts.tokens` zeigt der Balken stattdessen die verbrauchten Token:
+ * `LVL N · ~5.2k/16k` — beim lokalen Modell (16k) ist die Zahl aussagekräftiger
+ * als ein Prozentwert an einer 256k-Skala.
+ *
  * @param {number} pct fill percent 0..100 (typically already rounded)
  * @param {boolean} [estimated=false]
+ * @param {{ tokens?: boolean, used?: number, window?: number }} [opts]
  * @returns {string}
  */
-export function formatLvlBarLabel(pct, estimated = false) {
+export function formatLvlBarLabel(pct, estimated = false, opts = {}) {
   const raw = Number(pct);
   const p = Number.isFinite(raw) ? Math.round(raw) : 0;
   const clampedPct = Math.min(100, Math.max(0, p));
   const level = Math.min(10, Math.max(0, Math.floor(clampedPct / 10)));
   // Empty/0% is exact — no tilde even when estimated (agent chat with no tokens yet).
   const approx = estimated && clampedPct > 0 ? "~" : "";
+  const used = Number(opts?.used);
+  const win = Number(opts?.window);
+  if (opts?.tokens === true && Number.isFinite(win) && win > 0) {
+    const u = Number.isFinite(used) && used > 0 ? used : 0;
+    return `LVL ${level} · ${approx}${formatTokenCount(u)}/${formatTokenCount(win)}`;
+  }
   return `LVL ${level} · ${approx}${clampedPct}%`;
 }
 
@@ -262,12 +339,20 @@ export function formatContextTooltip(opts) {
   const win = Number(opts?.window) || 0;
   const pct = win > 0 ? Math.round((used / win) * 100) : 0;
   const approx = opts?.estimated ? "~" : "";
-  const model = String(opts?.model || "").trim() || "unbekannt";
+  const model =
+    String(opts?.model || "")
+      .trim()
+      .replace(/-expires-on-\d+$/i, "") || "unbekannt";
   const soft =
     opts?.softCapPercent != null && Number.isFinite(Number(opts.softCapPercent))
       ? ` · soft-cap ${Math.round(Number(opts.softCapPercent))}%`
       : "";
-  return `${approx}${formatTokenCount(used)} / ${formatTokenCount(win)} · ${model} · ${approx}${pct}%${soft}`;
+  // Unsichtbaren Prompt-Anteil transparent ausweisen statt still draufrechnen.
+  const over =
+    Number(opts?.overhead) > 0
+      ? ` · inkl. ${formatTokenCount(Number(opts.overhead))} Prompt`
+      : "";
+  return `${approx}${formatTokenCount(used)} / ${formatTokenCount(win)} · ${model} · ${approx}${pct}%${over}${soft}`;
 }
 
 /**

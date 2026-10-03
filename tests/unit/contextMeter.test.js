@@ -16,10 +16,14 @@ import {
 } from "../../shared/contextMeter.mjs";
 
 describe("resolveContextWindow", () => {
-  it("maps gpt-5.6-luna to 1M", () => {
-    const r = resolveContextWindow("openai/gpt-5.6-luna", "glyph-agent");
+  it("maps gpt-5.6-luna to 1M; Agent stays 256k", () => {
+    const r = resolveContextWindow("openai/gpt-5.6-luna", "");
     assert.equal(r.window, 1_000_000);
     assert.equal(r.source, "map");
+    assert.equal(
+      resolveContextWindow("openai/gpt-5.6-luna", "glyph-agent").window,
+      256_000,
+    );
   });
 
   it("maps sonnet-5 style ids to 1M", () => {
@@ -27,34 +31,37 @@ describe("resolveContextWindow", () => {
     assert.equal(resolveContextWindow("anthropic/claude-sonnet-5", "claude").window, 1_000_000);
   });
 
-  it("maps deepseek-v4-flash to 1M", () => {
+  it("maps deepseek-v4-flash to 1M on ^_Code, 256k on °_Agent", () => {
+    assert.equal(
+      resolveContextWindow("deepseek-v4-flash-0731", "_code").window,
+      1_000_000,
+    );
     assert.equal(
       resolveContextWindow("deepseek-v4-flash-0731", "glyph-agent").window,
-      1_000_000,
+      256_000,
     );
   });
 
-  it("maps deepseek-v4-flash-vision-exp to 1M on Agent and Code", () => {
+  it("maps deepseek-v4-flash-vision-exp to 1M on Code, 256k on Agent", () => {
     const agent = resolveContextWindow(
       "deepseek-v4-flash-vision-exp",
       "glyph-agent",
     );
-    assert.equal(agent.window, 1_000_000);
-    assert.equal(agent.source, "map");
-    assert.equal(agent.matchedKey, "deepseek-v4-flash-vision-exp");
+    assert.equal(agent.window, 256_000);
+    assert.equal(agent.source, "profile");
     assert.equal(
       resolveContextWindow("deepseek-v4-flash-vision-exp", "_code").window,
       1_000_000,
     );
   });
 
-  it("maps deepseek-reasoner to 1M", () => {
+  it("maps deepseek-reasoner to 1M on Code", () => {
     assert.equal(
-      resolveContextWindow("deepseek-reasoner", "glyph-agent").window,
+      resolveContextWindow("deepseek-reasoner", "_code").window,
       1_000_000,
     );
     assert.equal(
-      resolveContextWindow("deepseek/deepseek-reasoner", "glyph-agent").window,
+      resolveContextWindow("deepseek/deepseek-reasoner", "_code").window,
       1_000_000,
     );
   });
@@ -71,7 +78,7 @@ describe("resolveContextWindow", () => {
 
   it("ignores sticky grok model when profile is glyph-agent", () => {
     const r = resolveContextWindow("grok-4.5", "glyph-agent");
-    assert.equal(r.window, 1_000_000);
+    assert.equal(r.window, 256_000);
     assert.equal(r.source, "profile");
     assert.equal(r.matchedKey, "glyph-agent");
   });
@@ -82,9 +89,9 @@ describe("resolveContextWindow", () => {
     assert.equal(r.source, "profile");
   });
 
-  it("glyph-agent profile default is 1M with empty model", () => {
+  it("glyph-agent profile default is 256k with empty model", () => {
     const r = resolveContextWindow("", "glyph-agent");
-    assert.equal(r.window, 1_000_000);
+    assert.equal(r.window, 256_000);
     assert.equal(r.source, "profile");
   });
 });

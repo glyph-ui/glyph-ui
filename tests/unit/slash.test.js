@@ -10,6 +10,8 @@ import {
   fuzzyScore,
   highlightSlashSegments,
   insertSlashCommand,
+  isDuplicateSlashInsert,
+  shouldOpenSkillsFromComposer,
   isUiReloadItem,
   isUiReloadSlash,
   isValidSlashCommand,
@@ -51,6 +53,35 @@ describe("insertSlashCommand", () => {
     const r = insertSlashCommand("x /ab y", 5, "about");
     // token is "/ab" at 2..5 → replace with /about 
     assert.equal(r.text, "x /about  y");
+  });
+});
+
+describe("isDuplicateSlashInsert", () => {
+  it("true when trailing command already complete", () => {
+    assert.equal(isDuplicateSlashInsert("/merken ", 8, "merken"), true);
+    assert.equal(isDuplicateSlashInsert("/merken", 7, "merken"), true);
+  });
+
+  it("false for a partial token of another name", () => {
+    assert.equal(isDuplicateSlashInsert("/me", 3, "merken"), false);
+  });
+});
+
+describe("shouldOpenSkillsFromComposer", () => {
+  const skills = [{ name: "merken", kind: "skill" }];
+  it("opens while composing / or a prefix", () => {
+    assert.equal(shouldOpenSkillsFromComposer("/", 1, { typing: true, skills }), true);
+    assert.equal(shouldOpenSkillsFromComposer("/me", 3, { typing: true, skills }), true);
+  });
+  it("does not open on click into an inserted command", () => {
+    assert.equal(
+      shouldOpenSkillsFromComposer("/merken ", 3, { typing: false, skills }),
+      false,
+    );
+    assert.equal(
+      shouldOpenSkillsFromComposer("/merken", 7, { typing: true, skills }),
+      false,
+    );
   });
 });
 

@@ -111,6 +111,23 @@ Glyph bleibt auf **127.0.0.1**. Nach draußen nur **glyph-ui.com**.
 Web-Tor: Passwort in `~/.glyph-ui/web-password` (oder `GLYPH_WEB_PASSWORD`).  
 Details: [HANDBUCH.md § Remote](./HANDBUCH.md#remote).
 
+### HSEQ-Knopf über Obsidian Sync
+
+Der Knopf **Jetzt verarbeiten** in `00 ▶ HSEQ verarbeiten` schreibt nur eine Trigger-Notiz
+in den Vault — kein HTTP, kein Passwort, kein `127.0.0.1`. Der Server liest sie und startet
+denselben recurring-Job wie der 18:00-Scheduler. So funktioniert der Auslöser auch vom
+Arbeits-PC hinter jeder Firewall, solange Obsidian Sync den Vault zum Mac trägt.
+
+| Variable | Default | Bedeutung |
+|----------|---------|-----------|
+| `GLYPH_HSEQ_VAULT` | — | Obsidian-Vault mit `00 Arbeitsfluss/` (leer = Auslöser aus) |
+| `GLYPH_HSEQ_TRIGGER_FILE` | — | Statt Vault direkt die Trigger-Notiz |
+| `GLYPH_HSEQ_POLL_MS` | `5000` | Takt, in dem der Mac die Trigger-Notiz liest |
+
+Ablauf: Knopf schreibt `RUN <job> <token>` in `_hseq-trigger.md` → Sync → Mac liest die
+Notiz (letzter Token in `~/.glyph-ui/hseq-trigger.json`) → Job läuft → Ergebnis in
+`_hseq-status.md` → Sync zurück zum Knopf.
+
 ### Tests & CI
 
 ```bash
@@ -254,6 +271,9 @@ Wichtige Variablen:
 | `GLYPH_ALLOW_REMOTE` | `0` | `1` = non-loopback-Bind (nicht empfohlen) |
 | `GLYPH_WEB_PASSWORD` | `~/.glyph-ui/web-password` | Web-Tor für glyph-ui.com |
 | `GLYPH_WEB_HOSTS` | — | Extra-Hostnames für die Web-Fläche |
+| `GLYPH_HSEQ_VAULT` | — | Obsidian-Vault für den Sync-Auslöser (leer = aus) |
+| `GLYPH_HSEQ_TRIGGER_FILE` | — | Trigger-Notiz direkt statt über den Vault |
+| `GLYPH_HSEQ_POLL_MS` | `5000` | Lesetakt der Trigger-Notiz |
 
 Beispiel:
 

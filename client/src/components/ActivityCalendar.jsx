@@ -3,15 +3,17 @@
  * SPDX-License-Identifier: MIT
  *
  * Panel hinter dem Kalender-Icon: Plan (Aufgaben + wiederkehrende To-dos) und Aktivität.
- * Fertig-Status: „Erledigt…“ (Aufgabe + Pfad) bzw. „Erledigt löschen“ (wiederkehrend ok).
+ * Fertig-Status: „Erledigt“ entfernt die Aufgabe; „Erledigt löschen“ (wiederkehrend ok).
  */
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { seatFetch } from "../utils/seat.js";
 import { TaskEvidence } from "./TaskEvidence.jsx";
 import {
   TASK_HEADS,
-  cleanArtifact,
+  evidenceClip,
   formatTaskMeta,
+  leftoverDoneTasks,
+  planListTasks,
   tasksEndpointError,
 } from "../utils/tasks.js";
 import { SideDrawer } from "./SideDrawer.jsx";
@@ -29,7 +31,7 @@ const WEEKDAYS = [
 const PLAN_HINT_SHORT =
   "Rhythmus · Fertig-wenn · Pause · Jetzt · Löschen. LEER ≠ Erfolg.";
 const PLAN_HINT_MORE =
-  "Nach erfolgreichem Lauf: „Erledigt löschen“ entfernt die To-do. Leerlauf (LEER) ist nicht Erfolg. Session-Plan (ACP) ist die Leiste über dem Composer — hier nur Aufgaben & To-dos.";
+  "Aufgabe: „Erledigt“ nimmt sie aus dem Plan (kein Pfad). Nach erfolgreichem Lauf: „Erledigt löschen“ entfernt die To-do. Leerlauf (LEER) ist nicht Erfolg. Session-Plan (ACP) ist die Leiste über dem Composer — hier nur Aufgaben & To-dos.";
 
 function emptyForm() {
   return {
@@ -73,10 +75,6 @@ function scheduleLabel(s) {
     return `wöchentlich ${d} ${s.time}`;
   }
   return `täglich ${s.time}`;
-}
-
-function isOpenTask(task) {
-  return task?.status !== "done";
 }
 
 function isOpenTodo(t) {
@@ -174,8 +172,6 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [hintMore, setHintMore] = useState(false);
-  const [artifactEditId, setArtifactEditId] = useState(null);
-  const [artifactDraft, setArtifactDraft] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [writeConfirmPending, setWriteConfirmPending] = useState(false);
   const panelRef = useRef(null);
@@ -198,7 +194,15 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
     const res = await fetch("/api/tasks");
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(tasksEndpointError(json, res.status, "Aufgaben laden fehlgeschlagen"));
-    setTasks(Array.isArray(json.items) ? json.items : []);
+    const items = Array.isArray(json.items) ? json.items : [];
+    setTasks(planListTasks(items));
+    const leftover = leftoverDoneTasks(items);
+    if (!leftover.length) return;
+    await Promise.all(
+      leftover.map((task) =>
+        fetch(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "DELETE" }).catch(() => null),
+      ),
+    );
   }, []);
 
   async function assignTaskTarget(taskId, nextTarget) {
@@ -221,42 +225,22 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
     }
   }
 
-  async function submitTaskDone(task, artifact) {
-    const cleaned = cleanArtifact(artifact);
-    if (!cleaned) {
-      setError("Erledigt braucht einen Pfad oder Ort");
-      return;
-    }
+  async function removeTask(task) {
     setBusyId(`task-${task.id}`);
+    setError("");
     try {
       const res = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "done", artifact: cleaned }),
+        method: "DELETE",
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(tasksEndpointError(json, res.status, "Erledigt speichern fehlgeschlagen"));
-      if (json.item) {
-        setTasks((prev) => prev.map((t) => (t.id === task.id ? json.item : t)));
-      }
-      setArtifactEditId(null);
-      setArtifactDraft("");
+      if (!res.ok) throw new Error(tasksEndpointError(json, res.status, "Aufgabe entfernen fehlgeschlagen"));
+      setTasks((prev) => prev.filter((t) => t.id !== task.id));
+      setConfirmDeleteId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusyId(null);
     }
-  }
-
-  function beginTaskDone(task) {
-    const existing = cleanArtifact(task?.artifact);
-    if (existing) {
-      void submitTaskDone(task, existing);
-      return;
-    }
-    setConfirmDeleteId(null);
-    setArtifactEditId(task.id);
-    setArtifactDraft("");
   }
 
   useEffect(() => {
@@ -265,8 +249,6 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
     setError("");
     setTab("plan");
     setHintMore(false);
-    setArtifactEditId(null);
-    setArtifactDraft("");
     setConfirmDeleteId(null);
     setWriteConfirmPending(false);
     void loadTodos();
@@ -315,7 +297,7 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
     }
   };
 
-  const openTasks = tasks.filter(isOpenTask);
+  const openTasks = planListTasks(tasks);
   const openTodos = todos.filter(isOpenTodo);
   const planOpenCount = openTasks.length + openTodos.length;
   const planHasError = todos.some((t) => t.last_status === "error");
@@ -506,65 +488,54 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
                   <h3 className="cal-zone-title">Aufgaben</h3>
                   <span className="cal-zone-count">{openTasks.length} offen</span>
                 </div>
-                {tasks.length === 0 ? (
+                {openTasks.length === 0 ? (
                   <p className="cal-detail-empty">Noch keine übergebenen Aufgaben.</p>
                 ) : (
                   <ul className="cal-todo-list">
-                    {tasks.map((task) => (
-                      <li key={task.id} className={`cal-todo-item${task.status === "done" ? " cal-todo-item--done" : ""}`}>
+                    {openTasks.map((task) => {
+                      const taskBusy = busyId === `task-${task.id}`;
+                      const confirming = confirmDeleteId === `task-${task.id}`;
+                      return (
+                      <li key={task.id} className="cal-todo-item">
                         <div className="cal-todo-main">
                           <div className="cal-todo-title-row">
-                            <span className={`cal-todo-title${task.status === "done" ? " cal-todo-title--done" : ""}`}>
+                            <span className="cal-todo-title">
                               {task.title}
                             </span>
-                            <span
-                              className={`cal-status-chip cal-status-chip--${task.status === "done" ? "ok" : "open"}`}
-                            >
-                              {task.status === "done" ? "erledigt" : "offen"}
+                            <span className="cal-status-chip cal-status-chip--open">
+                              offen
                             </span>
                           </div>
                           <span className="cal-todo-meta">{formatTaskMeta(task)}</span>
                           {task.pass ? <span className="cal-todo-preview">Zu tun: {task.pass}</span> : null}
-                          {task.artifact ? <span className="cal-todo-preview">{task.artifact}</span> : null}
                           {task.summary ? <span className="cal-todo-preview">{task.summary}</span> : null}
                           <TaskEvidence
                             prompt={task.evidence?.prompt}
                             answer={task.evidence?.answer}
                           />
-                          {artifactEditId === task.id ? (
-                            <form
-                              className="cal-inline-form"
-                              onSubmit={(e) => {
-                                e.preventDefault();
-                                void submitTaskDone(task, artifactDraft);
-                              }}
-                            >
-                              <label className="cal-todo-field">
-                                <span>Pfad oder Ort des Ergebnisses</span>
-                                <input
-                                  autoFocus
-                                  required
-                                  value={artifactDraft}
-                                  onChange={(e) => setArtifactDraft(e.target.value)}
-                                  placeholder="z. B. HSEQ Sync/…/Ergebnis.md"
-                                />
-                              </label>
+                          {confirming ? (
+                            <div className="cal-inline-confirm" role="group" aria-label="Aufgabe entfernen">
+                              <p>
+                                {`„${evidenceClip(task.title, 60)}“ aus dem Plan nehmen?`}
+                              </p>
                               <div className="cal-inline-actions">
-                                <button type="submit" className="primary" disabled={busyId === `task-${task.id}`}>
-                                  Erledigt speichern
+                                <button
+                                  type="button"
+                                  className="danger"
+                                  disabled={taskBusy}
+                                  onClick={() => void removeTask(task)}
+                                >
+                                  Entfernen
                                 </button>
                                 <button
                                   type="button"
                                   className="ghost"
-                                  onClick={() => {
-                                    setArtifactEditId(null);
-                                    setArtifactDraft("");
-                                  }}
+                                  onClick={() => setConfirmDeleteId(null)}
                                 >
                                   Abbrechen
                                 </button>
                               </div>
-                            </form>
+                            </div>
                           ) : null}
                         </div>
                         <div className="cal-todo-actions">
@@ -572,7 +543,7 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
                             <span className="sr-only">Zielkopf</span>
                             <select
                               value={task.target || ""}
-                              disabled={busyId === `task-${task.id}` || task.status === "done"}
+                              disabled={taskBusy || confirming}
                               onChange={(e) => assignTaskTarget(task.id, e.target.value)}
                             >
                               {TASK_HEADS.map(([id, label]) => (
@@ -580,20 +551,21 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
                               ))}
                             </select>
                           </label>
-                          {task.status === "done" ? null : (
-                            <button
-                              type="button"
-                              className="cal-todo-fertig"
-                              disabled={busyId === `task-${task.id}` || artifactEditId === task.id}
-                              title="Aufgabe erledigen (Pfad nötig)"
-                              onClick={() => beginTaskDone(task)}
-                            >
-                              Erledigt…
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            className="cal-todo-fertig"
+                            disabled={taskBusy || confirming}
+                            title="Aufgabe aus dem Plan nehmen"
+                            onClick={() => {
+                              setConfirmDeleteId(`task-${task.id}`);
+                            }}
+                          >
+                            Erledigt
+                          </button>
                           <button
                             type="button"
                             className="ghost cal-todo-btn"
+                            disabled={taskBusy || confirming}
                             onClick={async () => {
                               try {
                                 const res = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/prompt`);
@@ -610,7 +582,8 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
                           </button>
                         </div>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 )}
               </section>
@@ -882,7 +855,6 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
                                 title="Durchgestrichene To-do löschen"
                                 disabled={busyId === t.id || confirming}
                                 onClick={() => {
-                                  setArtifactEditId(null);
                                   setConfirmDeleteId(t.id);
                                 }}
                               >
@@ -924,7 +896,6 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
                                         label: "Löschen",
                                         danger: true,
                                         onClick: () => {
-                                          setArtifactEditId(null);
                                           setConfirmDeleteId(t.id);
                                         },
                                       },

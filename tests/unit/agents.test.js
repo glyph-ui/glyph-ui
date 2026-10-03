@@ -68,12 +68,14 @@ test("buildAgentProfiles", async (t) => {
     );
   });
 
-  await t.test("grok keeps the TUI-equivalent argv", () => {
+  await t.test("grok argv: ACP stdio mit mittlerem Denkaufwand", () => {
     const grok = findAgent(profiles, "grok");
     assert.deepEqual(grok.args, [
       "agent",
       "--always-approve",
       "--no-leader",
+      "--reasoning-effort",
+      "medium",
       "stdio",
     ]);
   });

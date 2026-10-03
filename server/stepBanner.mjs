@@ -14,11 +14,13 @@
  */
 
 // Sprach-Mapping: Tool-Schrittname → [sichtbares Label, verständliche Aktion].
+// VaultFind-Defaults sind bewusst neutral („suche Notizen“); buildStepBanner /
+// resolveStepDisplay wählen Wiki vs. Arbeits-Vault anhand des step.detail.
 const STEP_LABELS = {
-  VaultFind: ["SearchVault", "suche im Obsidian-Vault (Arbeitssicherheit/HSEQ)"],
-  VaultRecall: ["SearchVault", "suche im Obsidian-Vault (alias)"],
-  VaultSearch: ["SearchVault", "suche im Obsidian-Vault (alias)"],
-  WikiSearch: ["SearchVault", "suche im Vault/Wiki (alias)"],
+  VaultFind: ["SearchVault", "suche Notizen"],
+  VaultRecall: ["SearchVault", "suche Notizen (alias)"],
+  VaultSearch: ["SearchVault", "suche Notizen (alias)"],
+  WikiSearch: ["Wiki", "suche im Wiki (alias)"],
   WikiGet: ["ReadNote", "liest Wiki-Notiz (alias)"],
   WikiApply: ["WriteNote", "wendet Wiki-Änderung an (alias)"],
   WikiStatus: ["WikiStatus", "Wiki-Status (agent-digest)"],
@@ -43,6 +45,38 @@ const STEP_LABELS = {
   WriteFile: ["WriteFile", "schreibt Datei (Diff+Backup)"],
   RunCommand: ["RunCommand", "Shell (Whitelist)"],
 };
+
+
+/** Vault-/Wiki-Suchen: Aktion aus detail wählen (nie Obsidian-Arbeits-Vault behaupten, wenn es Wiki ist). */
+const VAULT_FIND_STEPS = new Set(["VaultFind", "VaultRecall", "VaultSearch", "WikiSearch"]);
+
+/**
+ * @param {string} name Tool-/Stufenname
+ * @param {string} [detail] step.detail aus dem Trace
+ * @returns {[string, string]} [label, action]
+ */
+export function resolveStepDisplay(name, detail = "") {
+  const base = STEP_LABELS[name] || [name, name];
+  if (!VAULT_FIND_STEPS.has(name)) return base;
+
+  const d = String(detail || "").toLowerCase();
+  const raw = String(detail || "").trim();
+
+  // Wiki / memory-wiki (Apfel aus) — kein Obsidian-/HSEQ-Wording.
+  if (/memory-wiki|\bwiki\b/.test(d)) {
+    return ["Wiki", "suche im Wiki"];
+  }
+  // Arbeits-Vault / HSEQ / ASI / hybrid / Obsidian.
+  if (/arbeits|hseq|\basi\b|hybrid|obsidian/.test(d)) {
+    return ["Vault", "suche im Arbeits-Vault"];
+  }
+  // Kein Detail → neutral (kann Wiki-only oder Vault sein).
+  if (!raw) {
+    return ["SearchVault", "suche Notizen"];
+  }
+  // Detail vorhanden, aber kein Wiki-Signal (z. B. „3 Treffer“) → Arbeits-Vault.
+  return ["Vault", "suche im Arbeits-Vault"];
+}
 
 /**
  * Live-Think-Zeile. Kein hartes „DeepSeek CODE“ — der Detailtext trägt das Modell.
@@ -83,7 +117,7 @@ export function buildStepBanner(data) {
     if (!name || name === "LLM" || name === "answer") continue; // keine Tool-Stufe
     const status = (s && s.status) || "";
     const detail = (s && s.detail && String(s.detail)) || "";
-    const [label, action] = STEP_LABELS[name] || [name, name];
+    const [label, action] = resolveStepDisplay(name, detail);
 
     // Ergebnis-Zusatz menschenlesbar: leer → „nichts gefunden“, Fehler → „fehlgeschlagen“,
     // sonst Detailtext (z.B. „grob/exa · 3 Treffer“) anhängen.
@@ -97,10 +131,11 @@ export function buildStepBanner(data) {
 
   if (!lines.length) return "";
 
-  // Modell-/OpenRouter-Zeile aus dem echten Trace.
-  const provider = trace.provider || "OpenRouter";
+  // Modell-/Router-Zeile aus dem echten Trace (OpenRouter oder Orca).
+  const provider = trace.provider || "Router";
   const model = trace.model || "unbekannt";
-  const openrouter = `OpenRouter · ${provider === "openrouter" ? "OpenRouter" : provider} / ${model}`;
+  const hop = provider === "openrouter" || provider === "OpenRouter" ? "Router" : provider;
+  const openrouter = `Router · ${hop} / ${model}`;
 
   // Endet mit einem Markierer, damit die UI den Tool-Block sauber vom
   // eigentlichen Antworttext trennen und separat stylen kann (dunkler/kleiner).

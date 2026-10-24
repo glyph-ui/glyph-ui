@@ -56,6 +56,26 @@ export class SeatHub {
     return [...this._map.values()];
   }
 
+  /** Nur nachsehen, keinen Bridge anlegen (z. B. beim Aufräumen). */
+  peek(id) {
+    const raw = String(id || "").trim().toLowerCase();
+    const seat = raw.startsWith("web:") ? raw : parseSeat(raw);
+    return this._map.get(seat) || null;
+  }
+
+  /** Bridge entfernen; der Aufrufer beendet sie (stop()). */
+  remove(id) {
+    const raw = String(id || "").trim().toLowerCase();
+    const seat = raw.startsWith("web:") ? raw : parseSeat(raw);
+    const b = this._map.get(seat) || null;
+    if (b) this._map.delete(seat);
+    return b;
+  }
+
+  keys() {
+    return [...this._map.keys()];
+  }
+
   findBySession(sessionId) {
     const id = String(sessionId || "").trim();
     if (!id) return null;

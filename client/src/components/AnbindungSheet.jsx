@@ -245,7 +245,7 @@ function ModelBlock({
       }}
     >
       <div className="lage-keyline-head">
-        <strong>{isCode ? "Modell ^_Code" : "Modell °_Agent"}</strong>
+        <strong>{isCode ? "Modell ^_tick" : "Modell °_Agent"}</strong>
         <span className={`lage-pill${shown.source === "code" ? " is-on" : ""}`}>
           {isCode ? (shown.source === "code" ? "eigen" : "wie Agent") : "shared"}
         </span>
@@ -264,7 +264,7 @@ function ModelBlock({
           type="text"
           autoComplete="off"
           spellCheck={false}
-          aria-label={isCode ? "Modell ^_Code" : "Modell °_Agent"}
+          aria-label={isCode ? "Modell ^_tick" : "Modell °_Agent"}
           placeholder="deepseek-v4-flash-vision-exp"
           value={primary}
           disabled={busy}

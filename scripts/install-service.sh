@@ -20,13 +20,33 @@ HOST="${HOST:-127.0.0.1}"
 GLYPH_UI_CWD="${GLYPH_UI_CWD:-$ROOT}"
 GLYPH_UI_STATE_DIR="${GLYPH_UI_STATE_DIR:-$HOME_DIR/.glyph-ui}"
 
-if [[ -n "${GROK_BIN:-}" ]]; then
-  GROK_RESOLVED="$GROK_BIN"
-elif [[ -x "${HOME_DIR}/.grok/bin/grok" ]]; then
-  GROK_RESOLVED="${HOME_DIR}/.grok/bin/grok"
-else
-  GROK_RESOLVED="$(command -v grok 2>/dev/null || echo "${HOME_DIR}/.grok/bin/grok")"
+# PORT/HOST/... dürfen aus .env kommen — sonst würde der Dienst einen anderen
+# Port belegen als die dokumentierte Konfiguration.
+env_from_file() {
+  local key="$1" line val
+  [[ -f "$ROOT/.env" ]] || return 0
+  line="$(
+    grep -E "^[[:space:]]*(export[[:space:]]+)?${key}=" "$ROOT/.env" 2>/dev/null |
+      tail -n 1 || true
+  )"
+  [[ -n "$line" ]] || return 0
+  val="${line#*=}"
+  val="${val%$'\r'}"
+  if [[ "$val" == \"*\" || "$val" == \'*\' ]]; then
+    val="${val:1:${#val}-2}"
+  fi
+  printf '%s' "$val"
+}
+if [[ "$PORT" == "5174" ]]; then
+  PORT="$(env_from_file PORT)"
+  PORT="${PORT:-5174}"
 fi
+if [[ "$HOST" == "127.0.0.1" ]]; then
+  HOST="$(env_from_file HOST)"
+  HOST="${HOST:-127.0.0.1}"
+fi
+[[ -n "${GLYPH_UI_CWD:-}" ]] || GLYPH_UI_CWD="$ROOT"
+[[ -n "${GLYPH_UI_STATE_DIR:-}" ]] || GLYPH_UI_STATE_DIR="$HOME_DIR/.glyph-ui"
 
 PATH_VALUE="${HOME_DIR}/.local/bin:${HOME_DIR}/.grok/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
 
@@ -98,16 +118,8 @@ cat > "$PLIST_DST" <<EOF
       <string>${PATH_VALUE}</string>
       <key>HOME</key>
       <string>${HOME_DIR}</string>
-      <key>PORT</key>
-      <string>${PORT}</string>
-      <key>HOST</key>
-      <string>${HOST}</string>
-      <key>GROK_BIN</key>
-      <string>${GROK_RESOLVED}</string>
-      <key>GLYPH_UI_CWD</key>
-      <string>${GLYPH_UI_CWD}</string>
-      <key>GLYPH_UI_STATE_DIR</key>
-      <string>${GLYPH_UI_STATE_DIR}</string>
+      <!-- PORT/HOST/… stehen bewusst NICHT hier: start-service.sh liest sie
+           aus .env (launchd-Env würde .env sonst dauerhaft überschreiben). -->
       <key>NODE_ENV</key>
       <string>production</string>
     </dict>

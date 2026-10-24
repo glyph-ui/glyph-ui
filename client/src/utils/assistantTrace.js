@@ -115,10 +115,16 @@ export function stripLeakedToolCalls(text) {
     i += 1;
   }
 
+  const cut = out.search(/\{\s*"name"\s*:\s*"ChatDatei"/i);
+  if (cut >= 0 && endOfJsonObject(out, cut) < 0) {
+    out = out.slice(0, cut);
+  }
+
   return out
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]{2,}/g, " ");
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 /**
@@ -157,6 +163,10 @@ export function shortModelLabel(model) {
 
   // Längere Patterns zuerst.
   const rules = [
+    // 4.7 ist der Standard der Grok-CLI seit dem Update vom 22.10.2026.
+    // Ohne eigene Regel fiel "grok-4.7" auf /grok[-_.]?4/ zurück und zeigte
+    // nur "4" — die Anzeige hätte also das Modell verschluckt.
+    [/grok[-_.]?4\.7/, "4.7"],
     [/grok[-_.]?4\.6/, "4.6"],
     [/grok[-_.]?4\.1/, "4.1"],
     [/grok[-_.]?4[-_.]?fast/, "4-fast"],
@@ -226,7 +236,7 @@ function modelBelongsToPair(id, primary, fallback) {
 /**
  * Welches Modell die Header-Pille zeigt: Session-Trace, sonst Live-Label
  * wenn es zum Primary/Reserve-Paar des Kopfs gehört, sonst Primary.
- * Keine Kette (Primary→Reserve) — °_Agent wie ^_Code.
+ * Keine Kette (Primary→Reserve) — °_Agent wie ^_tick.
  *
  * @param {{ primary?: string, fallback?: string, used?: string, liveLabel?: string }} src
  * @returns {string}

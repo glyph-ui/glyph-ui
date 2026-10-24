@@ -76,13 +76,13 @@ export function TaskHandoffDialog({ source, message, userMessage, onClose, onUse
   return (
     <ComposerSheet
       className="composer-sheet--handoff"
-      label="AUFGABE"
+      label="FEHLERMELDUNG"
       role="dialog"
       ariaModal
       autoFocus
-      ariaLabel="Als Aufgabe übergeben"
+      ariaLabel="Fehlermeldung"
       onDismiss={onClose}
-      dismissTitle="Übergabe schließen"
+      dismissTitle="Fehlermeldung schließen"
       onKeyDown={(e) => {
         if (e.key === "Escape") onClose?.();
       }}
@@ -137,7 +137,7 @@ export function TaskHandoffDialog({ source, message, userMessage, onClose, onUse
             <p className="composer-sheet-note">
               {pairOk
                 ? "Meldung und Antwort hängen als Beleg. Landet unter Plan & Aktivität."
-                : "Ohne Meldung und Antwort keine Aufgabe."}
+                : "Ohne Meldung und Antwort keine Fehlermeldung."}
             </p>
           )}
         </div>

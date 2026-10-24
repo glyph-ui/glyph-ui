@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="1360" viewBox="0 0 980 1360" font-family="Arial, Helvetica, sans-serif">
+<defs><marker id="p" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 z" fill="#8a7532"/></marker></defs>
+<rect width="980" height="1360" fill="#fbfaf7"/>
+<text x="490" y="40" text-anchor="middle" font-size="24" font-weight="bold" fill="#2b2724">Ablaufdiagramm — Glyph Kunden-Sitzung</text>
+<text x="490" y="66" text-anchor="middle" font-size="13" fill="#7a7268">von der Anmeldung bis zum Abschluss · Stand 2026-10-03</text>
+<rect x="230" y="90" width="400" height="52" rx="12" fill="#f2ead6" stroke="#8a7532" stroke-width="1.5"/>
+<text x="430.0" y="121.0" text-anchor="middle" font-size="15" fill="#2b2724">A · Anmeldung: Kreditkarte / Apple Pay / Google Pay</text>
+<polyline points="430,142 430,172" fill="none" stroke="#8a7532" stroke-width="1.5" marker-end="url(#p)"/>
+<rect x="230" y="174" width="400" height="52" rx="12" fill="#ffffff" stroke="#8a7532" stroke-width="1.5"/>
+<text x="430.0" y="205.0" text-anchor="middle" font-size="15" fill="#2b2724">Autorisierung 0,50 € — kostet nichts</text>
+<polyline points="430,226 430,258" fill="none" stroke="#8a7532" stroke-width="1.5" marker-end="url(#p)"/>
+<rect x="200" y="258" width="460" height="60" rx="12" fill="#ffffff" stroke="#8a7532" stroke-width="1.5"/>
+<text x="430.0" y="283.0" text-anchor="middle" font-size="15" fill="#2b2724">Sitzung startet: 8 Stunden · Pausen egal</text>
+<text x="430.0" y="303.0" text-anchor="middle" font-size="13" fill="#7a7268">Slot wählen: 27B (Spaß) / API (Arbeit)</text>
+<polyline points="430,318 430,468" fill="none" stroke="#8a7532" stroke-width="1.5" marker-end="url(#p)"/>
+<text x="760" y="356" text-anchor="middle" font-size="11" fill="#7a7268">Der Kreis ist NICHT endlos —</text>
+<text x="760" y="374" text-anchor="middle" font-size="11" fill="#7a7268">er endet bei: Beenden · Fenster zu · 8 h · 1M</text>
+<rect x="120" y="470" width="350" height="100" rx="12" fill="#fdf9ee" stroke="#8a7532" stroke-width="1.5"/>
+<text x="295.0" y="505.0" text-anchor="middle" font-size="15" fill="#2b2724">Arbeiten: chatten · suchen · schreiben</text>
+<text x="295.0" y="525.0" text-anchor="middle" font-size="12" fill="#7a7268">Zähler wächst · graue Grenze 0,50 €</text>
+<text x="295.0" y="545.0" text-anchor="middle" font-size="11" fill="#7a7268">je 2,00 € Verbrauch</text>
+<polyline points="470,520 558,520" fill="none" stroke="#8a7532" stroke-width="1.5" marker-end="url(#p)"/>
+<text x="514" y="510" text-anchor="middle" font-size="12" fill="#7a7268">2 €</text>
+<rect x="560" y="470" width="320" height="100" rx="12" fill="#fdf9ee" stroke="#8a7532" stroke-width="1.5"/>
+<text x="720.0" y="505.0" text-anchor="middle" font-size="14" fill="#2b2724">Verlängerungshinweis</text>
+<text x="720.0" y="525.0" text-anchor="middle" font-size="12" fill="#7a7268">„2 € erreicht — weiter?“</text>
+<text x="720.0" y="545.0" text-anchor="middle" font-size="12" fill="#7a7268">[Weiter — 2 €]   [Beenden]</text>
+<polyline points="600,570 600,612 200,612 200,572" fill="none" stroke="#8a7532" stroke-width="1.5" marker-end="url(#p)"/>
+<text x="400" y="600" text-anchor="middle" font-size="11" fill="#7a7268">Weiter — 2 € · die Schleife schließt sich</text>
+<polyline points="120,555 75,555 75,726 228,726" fill="none" stroke="#8a7532" stroke-width="1.5" marker-end="url(#p)"/>
+<text x="82" y="646" text-anchor="start" font-size="11" fill="#7a7268">jederzeit: Fenster zu · 8 h · 1M</text>
+<polyline points="880,520 935,520 935,726 632,726" fill="none" stroke="#8a7532" stroke-width="1.5" marker-end="url(#p)"/>
+<text x="925" y="652" text-anchor="end" font-size="12" fill="#7a7268">Beenden</text>
+<rect x="230" y="700" width="400" height="52" rx="12" fill="#f2ead6" stroke="#8a7532" stroke-width="1.5"/>
+<text x="430.0" y="731.0" text-anchor="middle" font-size="15" fill="#2b2724">Abschluss — Abrechnung</text>
+<polyline points="430,752 430,782" fill="none" stroke="#8a7532" stroke-width="1.5" marker-end="url(#p)"/>
+<polygon points="430,782 625,832 430,882 235,832" fill="#ffffff" stroke="#8a7532" stroke-width="1.5"/>
+<text x="430" y="837" text-anchor="middle" font-size="16" fill="#2b2724">Verbrauch &gt; 0?</text>
+<polyline points="235,832 150,832 150,853" fill="none" stroke="#8a7532" stroke-width="1.5" marker-end="url(#p)"/>
+<text x="192" y="822" text-anchor="middle" font-size="12" fill="#7a7268">Nein</text>
+<polyline points="625,832 710,832 710,853" fill="none" stroke="#8a7532" stroke-width="1.5" marker-end="url(#p)"/>
+<text x="668" y="822" text-anchor="middle" font-size="12" fill="#7a7268">Ja</text>
+<rect x="60" y="855" width="360" height="80" rx="12" fill="#ffffff" stroke="#8a7532" stroke-width="1.5"/>
+<text x="240.0" y="880.0" text-anchor="middle" font-size="15" fill="#2b2724">0,00 € — kein Einzug</text>
+<text x="240.0" y="900.0" text-anchor="middle" font-size="11" fill="#7a7268">Autorisierung wird freigegeben</text>
+<text x="240.0" y="920.0" text-anchor="middle" font-size="11" fill="#7a7268">kein Ticket · die .md gibt es trotzdem</text>
+<rect x="500" y="855" width="430" height="80" rx="12" fill="#ffffff" stroke="#8a7532" stroke-width="1.5"/>
+<text x="715.0" y="880.0" text-anchor="middle" font-size="15" fill="#2b2724">Abrechnung: mind. 0,50 € / Verbrauch</text>
+<text x="715.0" y="900.0" text-anchor="middle" font-size="11" fill="#7a7268">+ Ticket (Kleinbetragsbeleg)</text>
+<text x="715.0" y="920.0" text-anchor="middle" font-size="11" fill="#7a7268">→ belege/ + belege.csv (10 Jahre)</text>
+<polyline points="240,935 240,983" fill="none" stroke="#8a7532" stroke-width="1.5" marker-end="url(#p)"/>
+<polyline points="715,935 715,983" fill="none" stroke="#8a7532" stroke-width="1.5" marker-end="url(#p)"/>
+<rect x="240" y="985" width="520" height="80" rx="12" fill="#ffffff" stroke="#8a7532" stroke-width="1.5"/>
+<text x="500.0" y="1010.0" text-anchor="middle" font-size="14" fill="#2b2724">Zusammenfassung .md (was hast du gemacht)</text>
+<text x="500.0" y="1030.0" text-anchor="middle" font-size="11" fill="#7a7268">Warnhinweis: „Nach dem Abschluss ist deine Arbeit</text>
+<text x="500.0" y="1050.0" text-anchor="middle" font-size="11" fill="#7a7268">unwiderruflich gelöscht.“ · Download möglich</text>
+<polyline points="500,1065 500,1103" fill="none" stroke="#8a7532" stroke-width="1.5" marker-end="url(#p)"/>
+<rect x="250" y="1105" width="500" height="60" rx="12" fill="#ffffff" stroke="#8a7532" stroke-width="1.5"/>
+<text x="500.0" y="1140.0" text-anchor="middle" font-size="15" fill="#2b2724">Löschen: Gespräch · Zwischenstände · Fensterinhalt</text>
+<polyline points="500,1165 500,1203" fill="none" stroke="#8a7532" stroke-width="1.5" marker-end="url(#p)"/>
+<ellipse cx="500" cy="1237" rx="150" ry="34" fill="#f2ead6" stroke="#8a7532" stroke-width="1.5"/>
+<text x="500" y="1243" text-anchor="middle" font-size="16" font-weight="bold" fill="#2b2724">Sitzung beendet</text>
+<text x="490" y="1314" text-anchor="middle" font-size="11" fill="#7a7268">0 Token = 0,00 € · nie mehr als 2,00 € ohne Klick · Inhalte werden nie gespeichert</text>
+<text x="490" y="1336" text-anchor="middle" font-size="11" fill="#7a7268">Grundlage: Konzept „Glyph für Kunden“ · Stand 2026-10-03</text>
+</svg>

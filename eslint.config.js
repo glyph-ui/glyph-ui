@@ -16,6 +16,8 @@ export default [
       "**/*.bak",
       "**/*.bak.*",
       "scripts/assets/**",
+      // One-off QA/screenshot helpers that run inside page.evaluate()
+      "assets/**/*.mjs",
     ],
   },
 
@@ -63,6 +65,7 @@ export default [
         // Vite define from package.json + git (client/vite.config.js)
         __GLYPH_VERSION__: "readonly",
         __GLYPH_BUILD__: "readonly",
+        __GLYPH_STAMP__: "readonly",
       },
     },
     settings: {

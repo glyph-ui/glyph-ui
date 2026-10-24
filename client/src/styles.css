@@ -119,11 +119,14 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f4f2ec;
-  --panel: #fffdf8;
-  --border: #ddd6c8;
-  --text: #1a1814;
-  --muted: #6f685c;
+  /* Buchpapier: fast neutral, nur ein Hauch warm. #f4f2ec zog gelb-rot
+     (Elfenbein). #fff wäre Tapete. Fläche etwas heller als das Blatt,
+     Rand ein Graphit, keine beige Linie. */
+  --bg: #f6f5f3;
+  --panel: #fbfaf8;
+  --border: #e4e2dd;
+  --text: #1c1b19;
+  --muted: #6d6964;
 
   /* Same gold hex as dark — only mixes change for contrast on light surfaces */
   --gold: #d4af37;
@@ -167,10 +170,10 @@
   --snack-tongue-tip: #ff8aa0;
   --snack-leaf: #5a9e4a;
 
-  /* LVL bar — stronger contrast on light surfaces */
-  --lvl-track: rgba(70, 62, 48, 0.18);
-  --lvl-gray: rgba(85, 78, 68, 0.58);
-  --lvl-gray-edge: rgba(55, 48, 40, 0.78);
+  /* LVL bar — stronger contrast on light surfaces, same ink as the page */
+  --lvl-track: rgba(40, 38, 36, 0.14);
+  --lvl-gray: rgba(70, 68, 64, 0.55);
+  --lvl-gray-edge: rgba(40, 38, 36, 0.72);
   --lvl-soft-cap: color-mix(in srgb, var(--gold-deep) 80%, transparent);
   --lvl-meta: var(--text);
   --lvl-meta-bg: color-mix(in srgb, var(--panel) 88%, transparent);
@@ -548,6 +551,98 @@ body,
   line-height: 1.2;
   cursor: pointer;
   white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+   Zwei-Segment-Schalter „27B | API" (Web-Fläche).
+   Beide Quellen stehen nebeneinander, damit man sieht, WORAUF man klickt —
+   eine einzelne Pille zeigte immer nur den aktuellen Zustand.
+   Gold = gewählt. Gefüllt = gewählt und bereit; nur Kontur = gewählt, aber
+   startet/schläft; rote Kontur = Fehler. Nicht gewählt bleibt neutral.
+   --------------------------------------------------------------------------- */
+.provider-toggle {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border, #333);
+  border-radius: 999px;
+  padding: 1px;
+  background: transparent;
+  overflow: hidden;
+}
+
+.provider-toggle-seg {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted, #999);
+  font-family: inherit;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  padding: 0.2rem 0.55rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.provider-toggle-seg:hover:not(:disabled) {
+  color: var(--fg, #eee);
+}
+
+/* Gewählt und bereit: gefüllt gold, dunkle Schrift für Kontrast. */
+.provider-toggle-seg.is-on {
+  background: var(--accent, #c9a227);
+  border-color: var(--accent, #c9a227);
+  color: #14110a;
+  font-weight: 600;
+}
+
+/* Gewählt, aber noch nicht bereit (startet oder schläft): goldene Kontur,
+   damit die WAHL sichtbar bleibt, ohne „bereit" zu behaupten. */
+.provider-toggle-seg.is-armed {
+  border-color: color-mix(in srgb, var(--accent, #c9a227) 55%, transparent);
+  color: var(--accent, #c9a227);
+}
+
+/* Gewählt, Modell meldet Fehler. */
+.provider-toggle-seg.is-err {
+  border-color: var(--bad, #e05555);
+  color: var(--bad, #e05555);
+}
+
+.provider-toggle-seg:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Gast-Sperre (2026-10-24): 27B nur für den Hauptnutzer — sichtbar, ausgegraut,
+   Klick zeigt 2 s lang einen Hinweis statt zu schalten. */
+.provider-toggle-seg.is-locked {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.provider-toggle-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.provider-toggle-hint {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 80;
+  white-space: nowrap;
+  padding: 0.25rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--border));
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.68rem;
+  pointer-events: none;
 }
 
 .provider-switch-btn:hover:not(:disabled) {
@@ -1213,7 +1308,7 @@ body,
   letter-spacing: 0.06em;
 }
 
-button.pill-btn {
+:is(button, a).pill-btn {
   font: inherit;
   font-size: 0.75rem;
   padding: 4px 12px;
@@ -1223,6 +1318,7 @@ button.pill-btn {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   cursor: pointer;
+  text-decoration: none;
   transition:
     border-color 0.15s ease,
     color 0.15s ease,
@@ -1231,7 +1327,7 @@ button.pill-btn {
 }
 
 /* Compact icon-only pills (status) — saves header space on phone */
-button.pill-btn.pill-btn--icon {
+:is(button, a).pill-btn.pill-btn--icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1259,6 +1355,26 @@ button.pill-btn.pill-btn--icon.pending svg {
   button.pill-btn.pill-btn--icon.pending svg {
     animation: none;
   }
+}
+
+/* Spenden-Knopf (Web-Header, glyph-ui.com): goldener Herz-Akzent.
+   Anchor statt Button — externer Link: neuer Tab, Kontextmenü, Link kopieren. */
+.pill-btn--donate {
+  color: var(--gold-bright, var(--gold));
+  border-color: color-mix(in srgb, var(--gold) 40%, var(--border));
+  background: color-mix(in srgb, var(--gold) 10%, var(--panel));
+}
+
+.pill-btn--donate:hover:not(:disabled) {
+  color: var(--gold-bright, var(--gold));
+  border-color: color-mix(in srgb, var(--gold) 65%, var(--border));
+  background: color-mix(in srgb, var(--gold) 18%, var(--panel));
+}
+
+/* Hell-Theme: Gold ist auf Papier zu hell — dunkleres Gold (--gold-deep) */
+:root[data-theme="light"] .pill-btn--donate,
+:root[data-theme="light"] .pill-btn--donate:hover:not(:disabled) {
+  color: var(--gold-deep);
 }
 
 button.pill-btn:hover:not(:disabled) {
@@ -1865,6 +1981,10 @@ button.send.send--stuffed .send-snack {
   text-shadow: 0 0 6px color-mix(in srgb, var(--bg) 80%, transparent);
 }
 
+.context-lvl-bar.is-pack-warn .context-lvl-bar-label {
+  color: var(--danger);
+}
+
 .context-lvl-bar-label {
   flex: 0 0 auto;
   /* Follow gray-front from left; clamp near end so text stays in bar */
@@ -2261,6 +2381,7 @@ button.send.send--stuffed .send-snack {
 
 .msg-user .body,
 .msg-user .md-body {
+  font-family: inherit;
   font-size: var(--type-user);
   line-height: var(--type-user-leading);
 }
@@ -2364,10 +2485,8 @@ button.send.send--stuffed .send-snack {
 .msg-thought .role,
 .msg-tool .role,
 .msg-system .role,
-.agent-step-line,
-.step-line,
-.step-line--start,
-.step-line--result {
+.step-row-title,
+.step-row-detail {
   color: var(--muted);
   background: transparent;
   border-color: transparent;
@@ -2519,15 +2638,17 @@ button.tool-card-summary:hover .tool-card-verb {
   display: block;
   font-family: ui-monospace, "IBM Plex Mono", Menlo, monospace;
   font-size: 0.72rem;
-  margin: 0 0 6px 0;
-  padding: 0 0 0 6px;
+  margin: 0;
+  padding: 0;
   word-break: break-word;
   color: var(--muted);
 }
 
 /*
-  Arbeitsprotokoll: Steps + Entwürfe, live offen, nach Final zugeklappt.
-  Primärspur (md-body) bleibt darunter in voller Lesestärke.
+  Arbeitsprotokoll (Haiku-artig): schmaler Aktivitäts-Streifen (neueste
+  Statuszeile + Laufzeit), live wie nach Final zugeklappt; aufklappt zu
+  Stufenzeilen (SearchWeb, Think …) + Entwürfen. Primärspur (md-body)
+  bleibt darunter in voller Lesestärke.
 */
 .work-protocol {
   display: block;
@@ -2540,44 +2661,159 @@ button.tool-card-summary:hover .tool-card-verb {
 }
 
 .work-protocol-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   cursor: pointer;
   list-style: none;
   user-select: none;
-  font-family: ui-monospace, "IBM Plex Mono", Menlo, monospace;
-  font-size: 0.72rem;
-  font-weight: 550;
-  letter-spacing: 0.02em;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: var(--type-secondary);
+  line-height: var(--type-secondary-leading);
   color: var(--muted);
-  padding: 2px 0 4px;
+  padding: 2px 2px 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   outline: none;
+}
+
+.work-protocol-summary:hover {
+  color: color-mix(in srgb, var(--muted) 55%, var(--text));
 }
 
 .work-protocol-summary::-webkit-details-marker {
   display: none;
 }
 
-.work-protocol-summary::before {
-  content: "▸ ";
-  display: inline-block;
-  width: 0.9em;
-  color: color-mix(in srgb, var(--muted) 80%, var(--text));
+/* Aktivitäts-Punkte: pulsierend während der Arbeit, ruhig danach */
+.activity-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
 }
 
-.work-protocol[open] > .work-protocol-summary::before {
-  content: "▾ ";
+.activity-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.45;
+}
+
+.activity-mark--live .activity-dot {
+  background: var(--accent);
+  opacity: 0.85;
+  animation: activity-pulse 1.2s ease-in-out infinite;
+}
+
+.activity-mark--live .activity-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.activity-mark--live .activity-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes activity-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+.activity-strip-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-strip-time {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.65;
+  margin-right: -4px;
+}
+
+.activity-strip-chev {
+  flex-shrink: 0;
+  display: inline-block;
+  opacity: 0.55;
+  transition: transform 0.15s ease;
+}
+
+.work-protocol[open] > .work-protocol-summary .activity-strip-chev {
+  transform: rotate(90deg);
 }
 
 .work-protocol-body {
-  padding: 2px 0 6px 2px;
-  border-left: 1px solid color-mix(in srgb, var(--muted) 28%, transparent);
-  margin-left: 2px;
+  margin: 6px 4px 0 6px;
+  padding: 2px 10px;
+  max-width: min(100%, 44rem);
+  border: 1px solid color-mix(in srgb, var(--muted) 18%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 35%, transparent);
+}
+
+/* Stufenzeilen: Titel = Stufen-Start, aufklappbar um das Ergebnis */
+.step-row {
+  margin: 0;
+  padding: 6px 0;
+}
+
+.step-row + .step-row {
+  border-top: 1px solid color-mix(in srgb, var(--muted) 16%, transparent);
+}
+
+.step-row-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.step-row-summary::-webkit-details-marker {
+  display: none;
+}
+
+.step-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.step-row-chev {
+  flex-shrink: 0;
+  opacity: 0.5;
+  font-size: 0.85em;
+  transition: transform 0.15s ease;
+}
+
+.step-row[open] > .step-row-summary .step-row-chev {
+  transform: rotate(90deg);
+}
+
+.step-row-detail {
+  margin: 4px 0 0 2px;
   padding-left: 8px;
+  border-left: 1px solid color-mix(in srgb, var(--muted) 24%, transparent);
+  opacity: 0.85;
+  word-break: break-word;
 }
 
 .drafts-rail {
   display: block;
-  margin: 6px 0 0;
-  padding: 0;
+  margin: 8px 0 2px;
+  padding: 6px 0 0;
+  border-top: 1px solid color-mix(in srgb, var(--muted) 16%, transparent);
   font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 0.72rem;
   font-style: italic;
@@ -2606,38 +2842,6 @@ button.tool-card-summary:hover .tool-card-verb {
   max-height: 12rem;
   overflow: auto;
   opacity: 0.92;
-}
-
-.agent-step-line {
-  margin: 0;
-  padding: 0;
-}
-
-.agent-step-line + .agent-step-line {
-  margin-top: 2px;
-}
-
-.step-block {
-  margin: 0;
-  padding: 0;
-}
-
-.step-block + .step-block {
-  margin-top: 3px;
-  padding-top: 0;
-}
-
-.step-line {
-  margin: 0;
-  padding: 0;
-}
-
-.step-line--start {
-  font-weight: 550;
-}
-
-.step-line--result {
-  font-weight: 400;
 }
 
 /* Selection on secondary track */
@@ -2791,8 +2995,10 @@ button.tool-card-summary:hover .tool-card-verb {
 .md-body {
   margin: 0;
   word-break: break-word;
-  font-family: inherit;
-  line-height: var(--type-chat-leading);
+  /* Lesetext. Bedienung (Composer, eigene Nachrichten, Medaillen) bleibt die UI-Schrift. */
+  font-family: "Literata Variable", Literata, "Iowan Old Style", Palatino, Georgia, serif;
+  font-optical-sizing: auto;
+  line-height: 1.58;
   font-size: var(--type-chat);
   color: var(--text);
 }
@@ -5373,6 +5579,59 @@ button.danger {
   border-color: color-mix(in srgb, var(--gold) 18%, var(--border));
 }
 
+/* ^_tick: Routine-Lage — Zahlen zuerst, dann Ordner und Läufe. */
+.cal-zone--routine {
+  background: color-mix(in srgb, var(--gold) 7%, var(--panel));
+  border-color: color-mix(in srgb, var(--gold) 26%, var(--border));
+}
+
+.cal-routine-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: 8px;
+}
+
+.cal-routine-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  background: color-mix(in srgb, var(--panel) 60%, var(--bg));
+  min-width: 0;
+}
+
+.cal-routine-tile--warn {
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--border));
+  background: color-mix(in srgb, var(--gold) 12%, var(--panel));
+}
+
+.cal-routine-value {
+  font-size: 1.05rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.cal-routine-label {
+  font-size: 0.7rem;
+  color: var(--fg);
+  opacity: 0.9;
+}
+
+.cal-routine-detail {
+  font-size: 0.64rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cal-routine-jobs {
+  margin: 0;
+}
+
 .cal-zone-head {
   display: flex;
   align-items: center;
@@ -6600,7 +6859,7 @@ button.cal-cell {
     padding: 6px 12px;
   }
 
-  button.pill-btn.pill-btn--icon {
+  :is(button, a).pill-btn.pill-btn--icon {
     width: 2.5rem;
     height: 2.5rem;
     min-width: 2.5rem;
@@ -9278,98 +9537,175 @@ button.send.send-eyes-away .graph-pupils {
   max-width: 22rem;
 }
 
+/* --- Web-Tor (glyph-ui.com): Anmeldefläche ------------------------------
+   Elegante Fassung: KEINE Karte — Wortzeichen, Goldhärchen, Feld als Linie.
+   Glyph-Grammatik: Haarlinien, Ruhe, eine Goldfamilie. */
 .web-gate {
   min-height: 100dvh;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  /* Optical center: a touch more bottom padding pulls the block down */
+  gap: 14px;
   padding: 10vh 16px 14vh;
-  background: var(--bg);
   color: var(--text);
+  background: radial-gradient(
+    1100px 640px at 50% 18%,
+    color-mix(in srgb, var(--gold) 4%, var(--bg)),
+    var(--bg) 72%
+  );
 }
 
 .web-gate-card {
-  /* Ticket 7: ~320–360px wide */
-  width: min(340px, 100%);
+  width: min(320px, 100%);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  text-align: center;
 }
 
 .web-gate-kicker {
   margin: 0;
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  /* Ticket 5: AA small text vs near-black */
-  color: color-mix(in srgb, var(--text) 68%, var(--muted));
+  color: color-mix(in srgb, var(--text) 55%, var(--muted));
 }
 
+.web-gate-kicker::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--gold);
+}
+
+/* Wortzeichen — leicht, gesperrt, mit Goldhärchen als Signatur */
 .web-gate-title {
-  margin: 0;
-  font-size: 1.35rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  margin: 6px 0 0;
+  font-size: 2.15rem;
+  font-weight: 300;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+
+.web-gate-title::after {
+  content: "";
+  display: block;
+  width: 26px;
+  height: 1px;
+  margin: 16px auto 4px;
+  background: color-mix(in srgb, var(--gold) 70%, transparent);
 }
 
 .web-gate-copy {
-  margin: 0 0 6px;
-  font-size: var(--type-secondary);
-  line-height: var(--type-secondary-leading);
-  /* Ticket 5: brighter subline */
-  color: color-mix(in srgb, var(--text) 64%, var(--muted));
+  margin: 0 0 18px;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--text) 62%, var(--muted));
 }
 
+/* Feld als Linie — kein Kasten */
 .web-gate-input {
   width: 100%;
   box-sizing: border-box;
-  min-height: 2.75rem;
-  padding: 8px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--panel);
+  min-height: 2.6rem;
+  padding: 8px 2px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 18%, var(--border));
+  border-radius: 0;
+  background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: 1rem;
+  font-size: 0.95rem;
+  text-align: left;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.web-gate-input::placeholder {
+  color: color-mix(in srgb, var(--text) 38%, var(--muted));
 }
 
 .web-gate-input:focus {
-  /* Ticket 7: subtler password focus ring */
-  outline: 1px solid color-mix(in srgb, var(--gold) 32%, transparent);
-  outline-offset: 1px;
-  border-color: color-mix(in srgb, var(--gold) 38%, var(--border));
+  outline: none;
+  border-bottom-color: color-mix(in srgb, var(--gold) 75%, transparent);
+  box-shadow: 0 1px 0 0 color-mix(in srgb, var(--gold) 45%, transparent);
 }
 
 .web-gate-error {
   margin: 0;
-  color: var(--danger);
+  padding: 6px 2px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  color: var(--danger-bright);
   font-size: var(--type-secondary);
 }
 
 .web-gate-submit {
-  min-height: 2.75rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--gold-bright) 55%, var(--border));
-  /* Ticket 6: real primary — lighter fill + dark readable label */
-  background: var(--gold-bright);
-  color: #1a1408;
+  min-height: 2.6rem;
+  margin-top: 18px;
+  border-radius: 4px;
+  /* Flacher Metallknopf: feiner Verlauf, gesperrte Versalien */
+  border: 1px solid color-mix(in srgb, var(--gold) 62%, #ffffff);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--gold) 84%, #ffffff),
+    color-mix(in srgb, var(--gold) 94%, #000000)
+  );
+  color: color-mix(in srgb, var(--gold) 20%, #000000);
   font: inherit;
+  font-size: 0.7rem;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
   cursor: pointer;
+  transition: transform 140ms ease, filter 140ms ease, background-color 140ms ease,
+    border-color 140ms ease, color 140ms ease;
 }
 
+/* Ruhezustand: keine Fläche — nur eine feine Kontur */
 .web-gate-submit:disabled {
-  opacity: 0.45;
+  background: transparent;
+  border-color: color-mix(in srgb, var(--text) 12%, var(--border));
+  color: color-mix(in srgb, var(--text) 34%, var(--muted));
   cursor: not-allowed;
 }
 
 .web-gate-submit:not(:disabled):hover {
-  background: color-mix(in srgb, var(--gold-bright) 72%, #ffffff);
-  color: #120e06;
+  filter: brightness(1.05);
+  transform: translateY(-1px);
 }
 
+.web-gate-submit:not(:disabled):active {
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-gate-input,
+  .web-gate-submit {
+    transition: none;
+  }
+  .web-gate-submit:not(:disabled):hover {
+    transform: none;
+  }
+}
+
+.web-gate-foot {
+  margin: 0;
+  text-align: center;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--text) 42%, var(--muted));
+}
 .web-password-backdrop {
   position: fixed;
   inset: 0;
@@ -9405,38 +9741,126 @@ button.send.send-eyes-away .graph-pupils {
   color: var(--muted);
 }
 
+/* Zweiter Abschnitt im selben Dialog („Gastzugang"). Eine feine Trennlinie
+   darüber macht sichtbar, dass es ein eigener Bereich ist — kein weiteres
+   Feld in derselben Formularschlange. */
+.web-password-subtitle {
+  margin: 18px 0 4px;
+  padding-top: 16px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
 .web-password-ok {
   margin: 0;
   color: var(--gold-bright);
   font-size: var(--type-secondary);
 }
 
-.web-password-actions {
+/*
+ * Kennwort-Dialog: alles gleich groß.
+ *
+ * Vorher standen „Abbrechen" (Pille, 2.75rem) und „Speichern" (Rechteck, 2.6rem
+ * plus margin-top: 18px) nebeneinander — unterschiedliche Höhe, unterschiedliche
+ * Ecken, unterschiedliche Schrift. Jetzt gibt es nur noch EINE Knopfgröße:
+ * 2.75rem hoch, volle Breite, Pille. Aktionen tragen ein Symbol (Haken, Kreuz,
+ * Papierkorb), damit man sie ohne Lesen erkennt.
+ *
+ * Die 4px-Optik von .web-gate-submit bleibt dem Anmeldebildschirm vorbehalten.
+ */
+
+/* Kopfzeile: Titel links, Schließen-Kreuz rechts. */
+.web-password-head {
   display: flex;
-  gap: 8px;
-  justify-content: flex-end;
   align-items: center;
-  margin-top: 4px;
+  justify-content: space-between;
+  gap: 10px;
 }
 
-.web-password-cancel {
-  min-height: 2.75rem;
-  padding: 0 14px;
+/* Rolle der Sitzung direkt am Titel — man soll sehen, womit man angemeldet ist,
+   statt zu raten, warum ein Speichern verweigert wird. */
+.web-password-role {
+  margin-left: 8px;
+  padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid var(--border);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  vertical-align: middle;
+}
+
+.web-password-role.is-owner {
+  border-color: color-mix(in srgb, var(--accent, #c9a227) 50%, transparent);
+  color: var(--accent, #c9a227);
+}
+
+/* Quadratischer Symbol-Knopf — gleiche Höhe wie die breiten Textknöpfe. */
+.web-password-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
   background: transparent;
   color: var(--text);
-  font: inherit;
   cursor: pointer;
 }
 
-.web-password-cancel:hover {
+.web-password-icon-btn:hover:not(:disabled) {
   background: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
-.web-password-actions .web-gate-submit {
-  width: auto;
-  padding: 0 18px;
+.web-password-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Der eine Knopftyp im Dialog: volle Breite, gleiche Höhe, Symbol + Text. */
+.web-password-wide {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 2.75rem;
+  margin-top: 0;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/* Eingabefeld und Symbol-Knopf in einer Zeile; das Feld nimmt den Rest. */
+.web-password-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.web-password-row > .web-gate-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Mobil wachsen Eingabefelder und Knöpfe gemeinsam auf 3rem. */
+@media (max-width: 640px) {
+  .web-password-wide,
+  .web-password-icon-btn {
+    min-height: 3rem;
+  }
+  .web-password-icon-btn {
+    width: 3rem;
+    height: 3rem;
+  }
 }
 
 /*
@@ -9527,7 +9951,7 @@ html.web-surface #root {
     gap: 6px;
   }
 
-  .app--web button.pill-btn.pill-btn--icon {
+  .app--web :is(button, a).pill-btn.pill-btn--icon {
     width: 2.75rem;
     height: 2.75rem;
     min-width: 2.75rem;
@@ -9605,8 +10029,7 @@ html.web-surface #root {
   }
 
   .web-gate-input,
-  .web-gate-submit,
-  .web-password-cancel {
+  .web-gate-submit {
     min-height: 3rem;
   }
 }
@@ -9615,8 +10038,6 @@ html.web-surface #root {
 /* ========== P3 UI polish (tickets 1–13) ========== */
 
 /* Shared focus-ring utility (gate, composer, modal, header) */
-.web-gate-input:focus,
-.web-gate-input:focus-visible,
 .composer-textarea--overlay:focus,
 .composer-textarea--overlay:focus-visible,
 .overview-search:focus,
@@ -9637,11 +10058,14 @@ html.web-surface #root {
   outline-offset: var(--focus-ring-offset);
 }
 
-.web-gate-input:focus {
-  /* Override older 1px gate ring */
-  outline: var(--focus-ring);
-  outline-offset: var(--focus-ring-offset);
-  border-color: color-mix(in srgb, var(--gold) 45%, var(--border));
+/* Passwort-Linie: hauchfeiner Fokus statt 2-px-Ring (Meldung 2026-10-03:
+   „Umrandung als Linie zu dick"). Deutlich sichtbar, aber fein. */
+.web-gate-input:focus,
+.web-gate-input:focus-visible {
+  outline: none;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--gold) 85%, transparent);
+  box-shadow: 0 1px 0 0 color-mix(in srgb, var(--gold) 35%, transparent);
 }
 
 /* Ticket 1 — header groups + separators */
@@ -9927,6 +10351,220 @@ html.web-surface #root {
   gap: 10px;
 }
 
+.msg-file-links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  max-width: 100%;
+}
+
+.msg-file-link {
+  display: inline-block;
+  box-sizing: border-box;
+  max-width: 100%;
+  margin: 0;
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--border));
+  border-radius: 8px;
+  background: transparent;
+  color: var(--gold-bright);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1.3;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: break-word;
+  cursor: pointer;
+}
+
+:root[data-theme="light"] .msg-file-link {
+  color: var(--gold-deep);
+  border-color: color-mix(in srgb, var(--gold-deep) 50%, var(--border));
+}
+
+.msg-file-link:hover {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 8%, transparent);
+}
+
+:root[data-theme="light"] .msg-file-link:hover {
+  color: var(--gold-deep);
+  border-color: var(--gold-deep);
+}
+
+.msg-file-link:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.chat-file-sheet {
+  overflow: auto;
+  background: #fff;
+  color: #1a1a1a;
+  padding: 28px 32px 40px;
+  min-height: 60vh;
+  border-radius: 8px;
+}
+
+.chat-file-sheet h2 {
+  margin: 0 0 16px;
+  font-size: 1.35rem;
+  line-height: 1.3;
+}
+
+.chat-file-sheet p {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.chat-file-gap {
+  height: 0.6rem;
+}
+
+.chat-file-a4 {
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  min-height: 0;
+  background: #e7e7e7;
+}
+
+.a4-page {
+  width: min(100%, 720px);
+  aspect-ratio: 210 / 297;
+  background: #fff;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.a4-fit {
+  padding: 7mm 6mm 5mm;
+  box-sizing: border-box;
+}
+
+.ba-sec {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 3px;
+}
+
+.ba-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ba-head,
+.ba-sub {
+  font-weight: 700;
+}
+
+.ba-sub {
+  margin-top: 0.28em;
+}
+
+.ba-point {
+  padding-left: 0.85em;
+  text-indent: -0.7em;
+}
+
+.ba-point::before {
+  content: "• ";
+}
+
+.a4-fit p {
+  margin: 0;
+  font-size: 9pt;
+  line-height: 1.2;
+}
+
+.ba-sec .iso-row {
+  margin: 0;
+  flex: none;
+  max-width: 34%;
+}
+
+.ba-sec .iso-fig {
+  width: auto;
+}
+
+.ba-sec .iso-svg {
+  width: 34px;
+  height: 34px;
+}
+
+.iso-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.iso-fig {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 7.2rem;
+  gap: 4px;
+}
+
+.iso-svg {
+  width: 72px;
+  height: 72px;
+  display: block;
+  object-fit: contain;
+}
+
+.iso-cap {
+  font-size: 0.68rem;
+  line-height: 1.2;
+  text-align: center;
+  color: #222;
+}
+
+.iso-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.iso-w {
+  background: #f5c400;
+  color: #111;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.iso-m {
+  background: #0057b8;
+  color: #fff;
+  border-radius: 999px;
+}
+
+.iso-e {
+  background: #0a7a32;
+  color: #fff;
+}
+
+.iso-p {
+  background: #fff;
+  color: #111;
+  border: 3px solid #c41212;
+  border-radius: 999px;
+}
+
+.iso-f {
+  background: #c41212;
+  color: #fff;
+}
+
 .msg-time {
   display: block;
   margin-top: 6px;
@@ -10167,7 +10805,7 @@ button.pill-btn {
     opacity 0.15s ease;
 }
 
-button.pill-btn:hover:not(:disabled) {
+:is(button, a).pill-btn:hover:not(:disabled) {
   transform: none;
 }
 
@@ -10186,47 +10824,55 @@ button.pill-btn:hover:not(:disabled) {
   margin-top: 6px;
 }
 
-/* Regel: Quellen & Anhänge = kompakte Chips (Kürzel + Titel), nie Fließtext-Links. */
+/* Regel: Quellen & Anhänge = kompakte Medaillen (Kürzel + Titel), nie Fließtext-Links.
+   --text, nicht --fg: --fg ist im Theme nicht gesetzt, color-mix wird dann
+   ungültig und der Browser wirft Rand und Fläche weg. Übrig blieb der
+   Gold-Unterstrich von .md-body a — die Medaille erschien erst im Hover. */
 .source-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   max-width: 100%;
-  min-height: 30px;
-  padding: 4px 10px 4px 7px;
-  border: 1px solid color-mix(in srgb, var(--fg) 22%, var(--border));
+  min-height: 0;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--text) 28%, var(--border));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--fg) 5%, var(--bg));
-  color: var(--text, var(--fg));
-  font-size: 12px;
-  line-height: 1.4;
+  background: color-mix(in srgb, var(--text) 8%, var(--bg));
+  color: var(--text);
+  font: inherit;
+  font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  font-size: 11px;
+  line-height: 1.35;
   cursor: pointer;
-  /* Anklickbare Knöpfe — auch wenn sie aus <a> entstehen (Web-Quellen). Ohne
-     das erben sie die Link-Unterstreichung und wirken wie Text (Meldung 2026-10-02). */
   text-decoration: none;
 }
 
 .source-chip:hover {
   border-color: color-mix(in srgb, var(--gold, #d4af37) 55%, var(--border));
-  color: var(--text, var(--fg));
+  color: var(--text);
+}
+
+.source-chip:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
 }
 
 .source-chip-kind {
   flex: 0 0 auto;
-  padding: 1px 5px;
-  border-radius: 6px;
-  font-size: 10px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.03em;
-  background: color-mix(in srgb, var(--fg) 12%, transparent);
-  color: color-mix(in srgb, var(--fg) 80%, transparent);
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: color-mix(in srgb, var(--text) 80%, transparent);
 }
 
 .source-chip-kind--pdf,
 .source-chip-kind--md,
 .source-chip-kind--web {
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
-  color: color-mix(in srgb, var(--fg) 72%, transparent);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: color-mix(in srgb, var(--text) 72%, transparent);
 }
 
 .source-chip-name {
@@ -10236,15 +10882,16 @@ button.pill-btn:hover:not(:disabled) {
   max-width: 28ch;
 }
 
-/* Inline-Quellen im Antworttext: dieselbe Chip-Regel (nie Fließtext-Links).
-   Etwas kräftiger als die Leisten-Chips — sie müssen im Fließtext als Knopf
-   lesbar sein (Nutzeroberfläche „keine Buttons" 2026-10-02). */
+/* Inline-Quellen: gleiche Medaille, auf Zeilenhöhe. Kein 30px-Block, der
+   den Satz umbricht. */
 .source-chip--inline {
   vertical-align: middle;
-  margin: 0 2px;
-  padding: 3px 9px;
-  border-color: color-mix(in srgb, var(--fg) 30%, var(--border));
-  background: color-mix(in srgb, var(--fg) 8%, var(--bg));
+  margin: 0 1px;
+  padding: 1px 6px;
+  font-size: 0.92em;
+  line-height: 1.2;
+  border-color: color-mix(in srgb, var(--text) 36%, var(--border));
+  background: color-mix(in srgb, var(--text) 10%, var(--bg));
 }
 
 .source-chip--inline:hover {
@@ -10252,11 +10899,23 @@ button.pill-btn:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--gold, #d4af37) 55%, var(--border));
 }
 
-/* Daumen: auf Touch bleiben Chips griffbereit groß. */
+/* .md-body a (Gold + Unterstrich) ist spezifischer als .source-chip allein.
+   Ohne diese Regel bleibt die Medaille ein Textlink. */
+.md-body a.source-chip,
+.md-body a.source-chip:hover,
+.md-body a.source-chip:visited,
+.md-body button.source-chip,
+.md-body button.source-chip:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+
+/* Daumen: die Leiste unter der Antwort bleibt griffbreit. Inline-Medaillen
+   bleiben auf Zeilenhöhe, sonst sprengt jede Quelle den Absatz. */
 @media (pointer: coarse) {
-  .source-chip {
+  .source-chips .source-chip {
     min-height: 44px;
-    padding: 4px 12px 4px 8px;
+    padding: 4px 12px;
     font-size: 12px;
   }
 }
@@ -10264,7 +10923,7 @@ button.pill-btn:hover:not(:disabled) {
 .source-chip-full {
   flex: 0 0 auto;
   opacity: 0.65;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 /* Innen im Fensterrrahmen, nicht bündig am Viewport-Rand. */
@@ -10299,6 +10958,10 @@ button.pill-btn:hover:not(:disabled) {
   .source-resize {
     display: none;
   }
+  /* Auf dem Telefon ist das Fenster schon volle Breite — Umschalter sinnlos. */
+  .source-max-btn {
+    display: none;
+  }
   .source-viewer .app-drawer-head {
     position: sticky;
     top: 0;
@@ -10313,6 +10976,7 @@ button.pill-btn:hover:not(:disabled) {
   }
   .source-viewer .app-drawer-head-actions .ghost,
   .source-open-ext,
+  .source-icon-btn,
   .source-find-nav {
     min-height: 44px;
     min-width: 44px;
@@ -10333,9 +10997,27 @@ button.pill-btn:hover:not(:disabled) {
   touch-action: none;
 }
 
+/* Sichtbarer Hinweis auf der Kante: die Leiste war vorher erst beim Hover da —
+   sie war für niemanden zu finden (Meldung 2026-10-09: Fenster nicht vergrößerbar). */
+.source-resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--gold, #d4af37) 16%, transparent);
+}
+
 .source-resize:hover,
 .source-resize:active {
   background: color-mix(in srgb, var(--gold, #d4af37) 28%, transparent);
+}
+
+.source-resize:hover::after,
+.source-resize:active::after {
+  background: color-mix(in srgb, var(--gold, #d4af37) 55%, transparent);
 }
 
 .source-viewer .app-drawer-head {
@@ -10381,6 +11063,70 @@ button.pill-btn:hover:not(:disabled) {
   overflow: hidden;
 }
 
+/* Kopf-Icon-Buttons (Meldung 2026-10-09): Herunterladen, Volle Breite, × —
+   quadratisch und gleich groß statt Text-Knöpfe ungleicher Länge. */
+.source-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.source-icon-btn:hover {
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--border));
+  color: var(--text);
+}
+
+.source-icon-btn:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.source-icon-btn.is-done {
+  border-color: color-mix(in srgb, var(--gold) 70%, var(--border));
+  color: var(--gold);
+}
+
+/* Obsidian bleibt Wortmarke, aber in der selben Zeile und Höhe. */
+.source-icon-btn--text {
+  width: auto;
+  padding: 0 10px;
+  color: var(--link, var(--gold));
+}
+
+/* Frame-Quelle: kein Herunterladen nötig — Browser-Fuß bleibt. */
+.source-icon-btn--close:hover {
+  border-color: color-mix(in srgb, var(--danger, #c0504d) 55%, var(--border));
+  color: var(--danger, #c0504d);
+}
+
+/* Volle Breite: im App-Fenster links an der Icon-Leiste stoppen statt
+   darunter zu verschwinden (Meldung 2026-10-09). Web-Fläche hat keine Leiste. */
+@media (min-width: 721px) {
+  .app-drawer.source-viewer--wide {
+    left: calc(var(--rail-width, 48px) + 10px);
+    width: auto !important;
+    max-width: none;
+  }
+  .app--web .app-drawer.source-viewer--wide {
+    left: 10px;
+    width: calc(100% - 20px) !important;
+  }
+}
+
 .source-frame {
   flex: 1 1 auto;
   width: 100%;
@@ -10388,6 +11134,102 @@ button.pill-btn:hover:not(:disabled) {
   border: 0;
   border-radius: 8px;
   background: #fff;
+}
+
+.source-pdf {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.source-pdf-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 0 0 6px;
+}
+
+.source-pdf-btn {
+  min-height: 32px;
+  min-width: 32px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.source-pdf-btn:hover {
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--border));
+}
+
+.source-pdf-btn:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.source-pdf-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.source-pdf-zoom {
+  min-width: 2.8rem;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.source-pdf-err {
+  font-size: 0.75rem;
+  color: var(--danger);
+}
+
+.source-pdf-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: #e7e7e7;
+}
+
+.source-pdf-pages {
+  min-height: 100%;
+}
+
+.source-pdf-page {
+  margin: 8px auto;
+  background: #fff;
+}
+
+.source-pdf-page canvas {
+  display: block;
+}
+
+/* Einzelne nicht renderbare Seite — bleibt Kachel im Dokument, statt alles abzubrechen. */
+.source-pdf-page--err {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 1px dashed color-mix(in srgb, var(--border) 85%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 92%, #fff 8%);
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+
+.source-pdf-status {
+  margin: 8px;
+  font-size: 0.8rem;
+  color: var(--text);
 }
 
 .source-text {
@@ -10468,8 +11310,12 @@ button.pill-btn:hover:not(:disabled) {
 
 .source-find-nav {
   flex: 0 0 auto;
+  width: 36px;
   min-height: 36px;
-  padding: 0 8px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .source-open-row {
@@ -10523,6 +11369,10 @@ button.pill-btn:hover:not(:disabled) {
 }
 
 .source-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
   min-height: 44px;
   min-width: 44px;
   padding: 0 14px;
@@ -10534,6 +11384,17 @@ button.pill-btn:hover:not(:disabled) {
   font: inherit;
   font-size: 0.85rem;
   cursor: pointer;
+}
+
+.source-action svg {
+  display: block;
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--gold) 75%, var(--muted));
+  transition: color 0.15s ease;
+}
+
+.source-action:hover svg {
+  color: var(--gold-bright, var(--gold));
 }
 
 .source-action:hover {

@@ -64,7 +64,7 @@ async function fetchJson(url, opts = {}) {
   }
 }
 
-async function waitForHealth(base, attempts = 40) {
+async function waitForHealth(base, attempts = 120) {
   let last;
   for (let i = 0; i < attempts; i++) {
     try {

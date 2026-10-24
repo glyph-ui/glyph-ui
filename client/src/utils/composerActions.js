@@ -6,6 +6,8 @@ export {
   canFork,
   canSwarm,
   composerActionLabel,
+  composerModeOptions,
+  isAgentHead,
   FORK_HEAD_IDS,
   resolveComposerAction,
   SWARM_HEAD_IDS,

@@ -9,7 +9,7 @@ import { GlyphMark } from "./EgyptMarks.jsx";
 import { AnbindungSheet } from "./AnbindungSheet.jsx";
 
 /** Agent profiles on the map (full nodes). */
-const PROFILE_ORDER = ["grok", "_code", "glyph-agent"];
+const PROFILE_ORDER = ["grok", "_tick", "glyph-agent"];
 /** Capability strands (thin nodes). */
 const CAPABILITY_ORDER = ["voice"];
 const MAP_NODE_ORDER = [...PROFILE_ORDER, ...CAPABILITY_ORDER];
@@ -18,7 +18,7 @@ const MAP_NODE_ORDER = [...PROFILE_ORDER, ...CAPABILITY_ORDER];
 const MAP_POS = {
   hub: { x: 50, y: 48 },
   grok: { x: 50, y: 12 },
-  _code: { x: 16, y: 82 },
+  _tick: { x: 16, y: 82 },
   "glyph-agent": { x: 84, y: 82 },
   /** Thin capability strand — right mid */
   voice: { x: 90, y: 42 },
@@ -26,7 +26,7 @@ const MAP_POS = {
 
 function nodeSlot(id) {
   if (id === "grok") return "grok";
-  if (id === "_code") return "code";
+  if (id === "_tick" || id === "_code") return "code";
   if (id === "glyph-agent") return "agent";
   if (id === "voice") return "voice";
   return "agent";

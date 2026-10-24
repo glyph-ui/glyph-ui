@@ -43,6 +43,9 @@ export function rewindPointsFromMessages(messages) {
   let index = 0;
   for (const m of messages) {
     if (!m || m.role !== "user") continue;
+    // Lokale Starter-Chips sind sichtbare user-Zeilen, aber keine Turns auf
+    // der Disk. Würden sie mitzählen, zeigte der Index auf den falschen Turn.
+    if (m.synthetic) continue;
     const text = messageText(m);
     if (!text) continue;
     out.push({
@@ -67,7 +70,7 @@ export function sliceMessagesBeforeUser(messages, dropUserIndex) {
   const out = [];
   let seen = 0;
   for (const m of messages) {
-    if (m && m.role === "user" && messageText(m)) {
+    if (m && m.role === "user" && !m.synthetic && messageText(m)) {
       if (seen >= drop) break;
       seen += 1;
     }

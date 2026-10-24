@@ -1,5 +1,5 @@
 /**
- * Arbeitsleiste: aktiver ^_Code-Task (Scope, Restzeit, Widerrufen).
+ * Arbeitsleiste: aktiver ^_tick-Task (Scope, Restzeit, Widerrufen).
  * Copyright (c) 2026 Alexander Hubert — MIT License
  */
 import { ComposerSheet } from "./ComposerSheet.jsx";

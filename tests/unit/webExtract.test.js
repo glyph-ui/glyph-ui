@@ -100,5 +100,13 @@ describe("webExtract: parsePageUrl / isPrivateHost", () => {
     assert.equal(isPrivateHost("nas.local"), true);
     assert.equal(isPrivateHost("::1"), true);
     assert.equal(isPrivateHost("10.1.2.3"), true);
+    // IPv4-mapped IPv6, Ganzzahl-IPv4, CGNAT, ULA/Link-Local
+    assert.equal(isPrivateHost("::ffff:127.0.0.1"), true);
+    assert.equal(isPrivateHost("[::ffff:7f00:1]"), true);
+    assert.equal(isPrivateHost("2130706433"), true);
+    assert.equal(isPrivateHost("100.64.0.1"), true);
+    assert.equal(isPrivateHost("fd00::1"), true);
+    assert.equal(isPrivateHost("fe80::1"), true);
+    assert.equal(isPrivateHost("8.8.8.8"), false);
   });
 });

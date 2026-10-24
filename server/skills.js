@@ -59,15 +59,70 @@ export function parseSkillFrontmatter(raw) {
     name: fields.name || undefined,
     description: fields.description || undefined,
     argumentHint: fields["argument-hint"] || fields.argumentHint || undefined,
+    // customer: true = auch für Kunden (Web-Fläche) freigegeben. Fehlt es,
+    // gilt der Skill als Betriebs-Skill (Meldung 2026-10-03: „alle Skills
+    // prüfen, ob sie überhaupt einsetzbar sind").
+    customer: fields.customer != null
+      ? /^(1|true|yes|ja)$/i.test(String(fields.customer).trim())
+      : undefined,
   };
 }
+
+/**
+ * Grok-Build-Bundled-Skills, die der °_Agent zusätzlich bekommt.
+ *
+ * Grok bleibt unangetastet und behält **alle** Bundled-Skills. Der °_Agent
+ * bekommt daraus nur die, die ohne Grok-CLI-Laufzeit funktionieren — reine
+ * Wissens-, Bewertungs- und Textarbeit. Bewusst **nicht** dabei:
+ * `create-workflow` (Rhai), `statusline` (TUI-Config), `imagine` + `game-*`
+ * (Imagine-Tools), `resume-claude|codex|cursor` (session_reader.py),
+ * `pr-babysit`/`review`/`implement`/`execute-plan` (git/`gh`/Subagenten-
+ * Worktrees), `docx`/`pdf`/`pptx` (python3/pandoc/LibreOffice), `learn`
+ * (Grok-Session-Tuning), `create-skill` (schreibt in ~/.grok/skills).
+ * `build-with-ai`, `skill-design-principles` und `threejs-frame-conventions`
+ * waren zunächst dabei und sind am 2026-10-11 auf Wunsch entfallen.
+ * Wirkung: neue Bundled-Skills landen nie versehentlich im Agenten-Katalog.
+ *
+ * @type {readonly string[]}
+ */
+export const AGENT_GROK_BUNDLED_SKILLS = ["code-review", "design"];
+
+/**
+ * Bundled-Skills, die nur die Web-Fläche (glyph-ui.com) zusätzlich anbietet.
+ * Der Schreibtisch-°_Agent bleibt bei `AGENT_GROK_BUNDLED_SKILLS`. Gäste sehen
+ * sie, weil der Katalog sie als `customer: true` ausliefert.
+ *
+ * @type {readonly string[]}
+ */
+export const WEB_EXTRA_BUNDLED_SKILLS = ["docx", "pdf", "review"];
+
+/**
+ * Skills, die dem °_Agent **nicht** angeboten werden (Auswahl 2026-10-11).
+ *
+ * Diese Namen kommen beim Agenten aus Nutzer-Roots (Shared SoT, `~/.glyph/skills`,
+ * `~/.glyph-agent/skills`, `~/.grok/skills`), nicht aus Groks Bundled-Bestand —
+ * dort regelt `AGENT_GROK_BUNDLED_SKILLS` die Aufnahme. Es wird nur die Palette
+ * gefiltert: die Dateien bleiben auf Disk, Slash-Ausführung per Hand bleibt
+ * möglich, und **Grok bleibt unangetastet**.
+ *
+ * @type {readonly string[]}
+ */
+export const AGENT_HIDDEN_SKILLS = [
+  "build-with-exa",
+  "einmal-job",
+  "frontend-ux-engineer",
+  "hseq-aus-fertig-lernen",
+  "hseq-eingang",
+  "hseq-handover",
+  "tdd-intelligence",
+];
 
 /**
  * Roots to scan for a profile (absolute directories that may contain skills).
  *
  * @param {string} profileId
  * @param {{ home?: string, cwd?: string, env?: NodeJS.ProcessEnv }} [opts]
- * @returns {Array<{ dir: string, source: SkillEntry["source"] }>}
+ * @returns {Array<{ dir: string, source: SkillEntry["source"], only?: readonly string[] }>}
  */
 export function skillRootsForProfile(profileId, opts = {}) {
   const home = opts.home || os.homedir();
@@ -88,7 +143,7 @@ export function skillRootsForProfile(profileId, opts = {}) {
       { dir: path.join(cwd, ".grok", "skills"), source: "project" },
       { dir: path.join(cwd, ".agents", "skills"), source: "project" },
     );
-  } else if (id === "claude" || id === "_code" || id === "code") {
+  } else if (id === "claude" || id === "_tick" || id === "tick" || id === "_code" || id === "code") {
     // ^_Code: shared Glyph skills + code-local + optional Claude
     roots.push(
       { dir: sharedGlyphSkills, source: "user" },
@@ -100,9 +155,19 @@ export function skillRootsForProfile(profileId, opts = {}) {
       { dir: path.join(cwd, ".agents", "skills"), source: "project" },
     );
   } else if (id === "glyph-agent") {
+    // °_Agent: Shared SoT + eigene Skills + Projekt-Roots. Zusätzlich die
+    // Skills, die der User in ~/.grok/skills selbst gepflegt hat (das ist eine
+    // Nutzer-Bibliothek, keine Grok-CLI-Interna) und aus Groks Bundled-Bestand
+    // nur die agententaugliche Allowlist — Grok selbst bleibt unverändert.
     roots.push(
       { dir: sharedGlyphSkills, source: "user" },
       { dir: agentSkills, source: "user" },
+      { dir: path.join(home, ".grok", "skills"), source: "user" },
+      {
+        dir: path.join(home, ".grok", "bundled", "skills"),
+        source: "bundled",
+        only: AGENT_GROK_BUNDLED_SKILLS,
+      },
       { dir: path.join(cwd, ".agents", "skills"), source: "project" },
       { dir: path.join(cwd, ".glyph", "skills"), source: "project" },
     );
@@ -171,6 +236,7 @@ async function readSkillFile(skillMdPath, source) {
     name,
     description,
     inputHint,
+    customer: fm.customer,
     kind: "skill",
     source,
     path: skillMdPath,
@@ -178,13 +244,40 @@ async function readSkillFile(skillMdPath, source) {
 }
 
 /**
+ * Entry type with symlinks resolved.
+ *
+ * Shared SoT: `~/.glyph/skills/<name>` links into a profile's own tree
+ * (`~/.glyph-agent/skills/<name>`). A `readdir` Dirent reports such an entry
+ * as neither directory nor file, so linked skills silently vanished from every
+ * catalog. `stat` (not `lstat`) follows the link.
+ *
+ * @param {import("node:fs").Dirent} ent
+ * @param {string} full
+ * @returns {Promise<"dir"|"file"|"other">}
+ */
+async function entryKind(ent, full) {
+  if (ent.isDirectory()) return "dir";
+  if (ent.isFile()) return "file";
+  if (!ent.isSymbolicLink()) return "other";
+  try {
+    const st = await fs.stat(full);
+    if (st.isDirectory()) return "dir";
+    if (st.isFile()) return "file";
+  } catch {
+    // dangling link — ignore
+  }
+  return "other";
+}
+
+/**
  * Scan one directory for SKILL.md packages or flat *.md command files.
  *
  * @param {string} dir
  * @param {SkillEntry["source"]} source
+ * @param {readonly string[]} [only]  allowlist of skill names (undefined = all)
  * @returns {Promise<SkillEntry[]>}
  */
-async function scanSkillDir(dir, source) {
+async function scanSkillDir(dir, source, only) {
   /** @type {SkillEntry[]} */
   const out = [];
   let entries;
@@ -193,21 +286,23 @@ async function scanSkillDir(dir, source) {
   } catch {
     return out;
   }
+  const allow = Array.isArray(only) ? new Set(only) : null;
 
   for (const ent of entries) {
     if (ent.name.startsWith(".")) continue;
     const full = path.join(dir, ent.name);
-    if (ent.isDirectory()) {
+    const kind = await entryKind(ent, full);
+    if (kind === "dir") {
       const skillMd = path.join(full, "SKILL.md");
       const skill = await readSkillFile(skillMd, source);
-      if (skill) out.push(skill);
+      if (skill && (!allow || allow.has(skill.name))) out.push(skill);
       continue;
     }
-    if (!ent.isFile()) continue;
+    if (kind !== "file") continue;
     // Flat command markdown (Claude-style commands/)
     if (/\.md$/i.test(ent.name) && ent.name.toUpperCase() !== "SKILL.MD") {
       const skill = await readSkillFile(full, source);
-      if (skill) out.push(skill);
+      if (skill && (!allow || allow.has(skill.name))) out.push(skill);
     }
   }
   return out;
@@ -230,8 +325,8 @@ export async function listSkillsForProfile(profileId, opts = {}) {
   const byName = new Map();
   // Later roots override earlier only if higher priority: project > user > plugin > bundled
   const priority = { project: 4, user: 3, plugin: 2, bundled: 1, command: 1 };
-  for (const { dir, source } of roots) {
-    const found = await scanSkillDir(dir, source);
+  for (const { dir, source, only } of roots) {
+    const found = await scanSkillDir(dir, source, only);
     for (const s of found) {
       const prev = byName.get(s.name);
       if (!prev || (priority[s.source] || 0) >= (priority[prev.source] || 0)) {
@@ -240,16 +335,19 @@ export async function listSkillsForProfile(profileId, opts = {}) {
     }
   }
 
-  const skills = [...byName.values()].sort((a, b) =>
-    a.name.localeCompare(b.name),
-  );
+  // Kuratierte Palette: der °_Agent zeigt die als unnötig markierten Skills
+  // nicht an (Dateien bleiben liegen, Grok sieht sie weiter).
+  const hidden = id === "glyph-agent" ? new Set(AGENT_HIDDEN_SKILLS) : null;
+  const skills = [...byName.values()]
+    .filter((s) => !hidden?.has(s.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   let hint = null;
   if (skills.length === 0) {
     if (id === "glyph-agent") {
       hint =
         "Keine Skills gefunden. Optional: ~/.glyph/skills/<name>/SKILL.md anlegen.";
-    } else if (id === "claude" || id === "_code" || id === "code") {
+    } else if (id === "claude" || id === "_tick" || id === "tick" || id === "_code" || id === "code") {
       hint =
         "Keine ^_Code-Skills gefunden (optional: ~/.glyph/code-skills oder ~/.claude/skills).";
     } else {
@@ -262,5 +360,27 @@ export async function listSkillsForProfile(profileId, opts = {}) {
     skills,
     roots: roots.map((r) => r.dir),
     hint,
+  };
+}
+
+/**
+ * Web-Fläche: `docx`, `pdf`, `review` aus dem Grok-Bundled-Bestand an den
+ * Profil-Katalog hängen. Schreibtisch-Listen rufen das nicht auf.
+ *
+ * @param {{ profile: string, skills: SkillEntry[], roots: string[], hint: string | null }} result
+ * @param {{ home?: string }} [opts]
+ */
+export async function withWebExtraSkills(result, opts = {}) {
+  const home = opts.home || os.homedir();
+  const dir = path.join(home, ".grok", "bundled", "skills");
+  const extra = await scanSkillDir(dir, "bundled", WEB_EXTRA_BUNDLED_SKILLS);
+  const byName = new Map((result.skills || []).map((s) => [s.name, s]));
+  for (const skill of extra) {
+    if (byName.has(skill.name)) continue;
+    byName.set(skill.name, { ...skill, customer: true });
+  }
+  return {
+    ...result,
+    skills: [...byName.values()].sort((a, b) => a.name.localeCompare(b.name)),
   };
 }

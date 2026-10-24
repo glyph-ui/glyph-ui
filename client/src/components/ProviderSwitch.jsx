@@ -1,6 +1,6 @@
 /**
  * ProviderSwitch — kompakter Header-Umschalter (Direkt/Hybrid/Fallback/Lokal)
- * für °_Agent & ^_Code. Schreibt direkt via PUT /api/bindings.
+ * für °_Agent & ^_tick. Schreibt direkt via PUT /api/bindings.
  *
  * „Lokal" ist der Bonsai-2-27B-Kopf (127.0.0.1:8080). Sein Modellprozess
  * braucht ~8 GB RAM, deshalb zeigt der Eintrag seinen Zustand (off /

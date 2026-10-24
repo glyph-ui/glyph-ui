@@ -92,6 +92,18 @@ export function CableLage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, loadBindings]);
 
+  // Auswahl/Cluster nur über Refs lesen: sonst würde der Fokus-Effekt bei
+  // jeder Ordner-Auswahl neu laufen, den Fokus auf „Schließen" zurückwerfen
+  // und Tastaturnutzer aus dem Graph katapultieren.
+  const selectedIdRef = useRef(selectedId);
+  const clusterRef = useRef(cluster);
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+  useEffect(() => {
+    clusterRef.current = cluster;
+  }, [cluster]);
+
   useEffect(() => {
     if (!open) return undefined;
     const prev = document.activeElement;
@@ -103,7 +115,7 @@ export function CableLage({
       if (handleDialogTab(stageRef.current, e)) return;
       if (e.key !== "Escape") return;
       e.preventDefault();
-      if (selectedId || cluster !== "all") {
+      if (selectedIdRef.current || clusterRef.current !== "all") {
         setSelectedId(null);
         setCluster("all");
         setPendingDetach(null);
@@ -123,7 +135,7 @@ export function CableLage({
         }
       }
     };
-  }, [open, onClose, selectedId, cluster]);
+  }, [open, onClose]);
 
   useEffect(() => {
     if (focus === "vaults" || focus === "agent") {
@@ -224,7 +236,7 @@ export function CableLage({
 
   const profiles = bindings?.profiles || {};
   const grok = profiles.grok;
-  const code = profiles._code;
+  const code = profiles._tick || profiles._code;
   const agent = profiles["glyph-agent"];
   const absorb = cluster === "all" ? null : cluster;
 

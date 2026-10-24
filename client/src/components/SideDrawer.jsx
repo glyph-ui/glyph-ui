@@ -8,6 +8,25 @@ import { useEffect, useId, useRef, useState } from "react";
 import { handleDialogTab } from "../utils/focusTrap.js";
 
 /**
+ * Stapel offener Panels. Mehrere SideDrawer können gleichzeitig offen sein
+ * (z. B. Skills + Quellen-Fenster). Nur das oberste darf Esc/Tab behandeln,
+ * sonst schließt ein Escape beide und zwei Fokusfallen kämpfen um Tab.
+ */
+const drawerStack = [];
+function pushDrawer(id) {
+  const i = drawerStack.indexOf(id);
+  if (i >= 0) drawerStack.splice(i, 1);
+  drawerStack.push(id);
+}
+function popDrawer(id) {
+  const i = drawerStack.indexOf(id);
+  if (i >= 0) drawerStack.splice(i, 1);
+}
+function isTopDrawer(id) {
+  return drawerStack[drawerStack.length - 1] === id;
+}
+
+/**
  * @param {object} props
  * @param {boolean} props.open
  * @param {() => void} props.onClose
@@ -44,6 +63,7 @@ function SideDrawer({
 }) {
   const panelRef = useRef(null);
   const titleId = useId();
+  const drawerId = titleId;
   const [present, setPresent] = useState(open);
   const [entered, setEntered] = useState(false);
   const sideNorm = side === "left" ? "left" : "right";
@@ -94,12 +114,16 @@ function SideDrawer({
 
   useEffect(() => {
     if (!open) return undefined;
+    pushDrawer(drawerId);
     const onTab = (e) => {
-      if (e.key === "Tab") handleDialogTab(panelRef.current, e);
+      if (e.key !== "Tab") return;
+      if (!isTopDrawer(drawerId)) return;
+      handleDialogTab(panelRef.current, e);
     };
     // Bubble: nested menus (⋯) preventDefault on Esc first
     const onEsc = (e) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (!isTopDrawer(drawerId)) return;
       const t = e.target;
       if (
         t &&
@@ -109,15 +133,17 @@ function SideDrawer({
         return;
       }
       e.preventDefault();
+      e.stopImmediatePropagation();
       onClose?.();
     };
     window.addEventListener("keydown", onTab, true);
     window.addEventListener("keydown", onEsc, false);
     return () => {
+      popDrawer(drawerId);
       window.removeEventListener("keydown", onTab, true);
       window.removeEventListener("keydown", onEsc, false);
     };
-  }, [open, onClose]);
+  }, [open, onClose, drawerId]);
 
   if (!present) return null;
 

@@ -48,6 +48,11 @@ export function WebGate({ onUnlocked, hint }) {
         return;
       }
       onUnlocked?.();
+      // Nach dem Login hart neu laden: die Seite VOR dem Tor lief mit altem
+      // Bundle und ohne WS-Token — Search-Modus, 27B-Schalter und „Im Vault
+      // suchen" erschienen erst nach einem manuellen Refresh. Der Reload
+      // liefert frisches index.html (mit Token) und den vollen Zustand.
+      window.location.reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Netzwerkfehler");
       setBusy(false);
@@ -59,9 +64,9 @@ export function WebGate({ onUnlocked, hint }) {
     <div className="web-gate">
       <form className="web-gate-card" onSubmit={(e) => void submit(e)}>
         <p className="web-gate-kicker">glyph-ui.com</p>
-        <h1 className="web-gate-title">°_Agent</h1>
+        <h1 className="web-gate-title">Glyph</h1>
         <p className="web-gate-copy">
-          {hint || "Web-Fläche. Schreibtisch bleibt auf dem Mac."}
+          {hint || "Geschützter Arbeitsbereich – bitte Kennwort eingeben."}
         </p>
         <label className="web-gate-label">
           <span className="sr-only">Passwort</span>
@@ -104,6 +109,7 @@ export function WebGate({ onUnlocked, hint }) {
           {busy ? "…" : "Öffnen"}
         </button>
       </form>
+      <p className="web-gate-foot">Zugang nur für berechtigte Personen</p>
     </div>
   );
 }

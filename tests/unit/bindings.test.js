@@ -26,6 +26,7 @@ import {
   updateBindings,
   writeBindingsFile,
   buildAgentPush,
+  isLoopbackAgentUrl,
   syncModelsIfMismatch,
 } from "../../server/bindings.js";
 
@@ -211,7 +212,8 @@ test("buildBindingsStatus never leaks raw secrets", async () => {
   assert.ok(!json.includes("xai-zzzz"));
   assert.equal(status.keys.OPENROUTER_API_KEY.set, true);
   assert.ok(status.keys.OPENROUTER_API_KEY.masked.startsWith("…"));
-  assert.equal(status.profiles._code.checks.find((c) => c.id === "openrouter").ok, true);
+  assert.equal(status.profiles._tick.checks.find((c) => c.id === "openrouter").ok, true);
+  assert.equal(status.profiles._tick.label, "^_tick");
   assert.equal(status.profiles["glyph-agent"].checks.find((c) => c.id === "agent_service").ok, true);
   assert.equal(status.voice.ok, true);
   assert.equal(status.voice.provider, "xai");
@@ -450,4 +452,14 @@ test("probeModelOnAgent sends hop=openrouter for slash slug", async () => {
   );
   assert.equal(result.ok, true);
   assert.equal(calls[0].body.hop, "openrouter");
+});
+
+test("isLoopbackAgentUrl lässt nur lokale Engine-Ziele zu", () => {
+  assert.equal(isLoopbackAgentUrl("http://127.0.0.1:18899"), true);
+  assert.equal(isLoopbackAgentUrl("http://localhost:18899/"), true);
+  assert.equal(isLoopbackAgentUrl("http://[::1]:18899"), true);
+  assert.equal(isLoopbackAgentUrl("https://127.0.0.1.evil.example"), false);
+  assert.equal(isLoopbackAgentUrl("https://evil.example"), false);
+  assert.equal(isLoopbackAgentUrl("file:///tmp/x"), false);
+  assert.equal(isLoopbackAgentUrl(""), false);
 });

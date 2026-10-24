@@ -43,7 +43,8 @@ describe("handoffTitleFrom", () => {
 describe("headLabel / statusLabel", () => {
   it("keeps empty target as later, never Analyse as a head", () => {
     assert.equal(headLabel(""), "Später festlegen");
-    assert.equal(headLabel("_code"), "^_Code");
+    assert.equal(headLabel("_tick"), "^_tick");
+    assert.equal(headLabel("_code"), "^_Code (alt)");
     assert.equal(headLabel("analysis"), "analysis");
     assert.equal(statusLabel("analysis"), "Analyse");
     assert.equal(statusLabel("new"), "neu");

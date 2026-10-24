@@ -9,6 +9,7 @@ import {
   canSwarm,
   cloneSessionStore,
   composerActionLabel,
+  composerModeOptions,
   deepResearchPrompt,
   FORK_HEAD_IDS,
   parseForkResponse,
@@ -81,10 +82,54 @@ describe("canSwarm / labels", () => {
     assert.equal(canSwarm("agent"), true);
   });
 
-  it("labels the four composer actions", () => {
+  it("labels the composer actions", () => {
     assert.equal(composerActionLabel("swarm"), "Swarm");
     assert.equal(composerActionLabel("deep-search"), "Deep Search");
+    assert.equal(composerActionLabel("vault"), "Vault");
     assert.equal(composerActionLabel("chat"), "Chat");
+    assert.equal(composerActionLabel("chat", "grok"), "Chat");
+    assert.equal(composerActionLabel("chat", "_code"), "Chat");
+    assert.equal(composerActionLabel("chat", "glyph-agent"), "Search");
+    assert.equal(composerActionLabel("chat", "agent"), "Search");
+  });
+});
+
+describe("composerModeOptions", () => {
+  it("shows Vault and Swarm on °_Agent, not the blocked modes", () => {
+    const opts = composerModeOptions("glyph-agent", { deepSearch: false, swarm: true });
+    assert.deepEqual(
+      opts.map((o) => o.id),
+      ["chat", "vault", "swarm"],
+    );
+    assert.equal(opts[0].label, "Search");
+  });
+
+  it("shows Deep Search and Fork on Grok, not Swarm or Vault", () => {
+    assert.deepEqual(
+      composerModeOptions("grok", { deepSearch: true, swarm: false }).map((o) => o.id),
+      ["chat", "deep-search", "fork"],
+    );
+    assert.equal(
+      composerModeOptions("grok", { deepSearch: true, swarm: false })[0].label,
+      "Chat",
+    );
+  });
+
+  it("shows Fork and Swarm on ^_Code", () => {
+    assert.deepEqual(
+      composerModeOptions("_code", { deepSearch: false, swarm: true }).map((o) => o.id),
+      ["chat", "fork", "swarm"],
+    );
+  });
+});
+
+describe("resolveComposerAction vault", () => {
+  it("sends chat with the vault flag", () => {
+    assert.deepEqual(resolveComposerAction("vault", "Leitern prüfen"), {
+      action: "chat",
+      text: "Leitern prüfen",
+      vaultSearch: true,
+    });
   });
 });
 

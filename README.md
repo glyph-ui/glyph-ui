@@ -1,7 +1,7 @@
 # Glyph
 
 **Browser-Hülle für Coding-Agenten** über ACP (Agent Client Protocol) — **keine eigene KI**.
-Du bringst Grok / ^_Code / °_Agent mit; Glyph streamt Chat, Tools und Status.
+Du bringst Grok / ^_tick / °_Agent mit; Glyph streamt Chat, Tools und Status.
 Für lokale Power-User (z. B. Mac Mini). *Ursprung: „Build Term for Grok“.*
 
 **Erstellt von [Lx Hbrt](https://github.com/lxhbrt)** · Copyright © 2026 · [MIT License](./LICENSE)
@@ -12,7 +12,7 @@ Für lokale Power-User (z. B. Mac Mini). *Ursprung: „Build Term for Grok“.
 
 ```
 Browser (React)  --WebSocket-->  Node Bridge  --stdio ACP-->  Agent-Profil
-                                                               (grok | ^_Code | °_Agent)
+                                                               (grok | ^_tick | °_Agent)
 ```
 
 ## Von Grok zu einer offenen UI
@@ -25,7 +25,7 @@ nach je ein weiteres Profil hinzu:
 | Schritt | Profil | Grund |
 |---------|--------|-------|
 | Start | **grok** | Browser-Oberfläche für die lokale Grok-CLI (OAuth) |
-| +1 | **^_Code** | DeepSeek V4 Flash (OpenRouter) · Workspace Read/Write/Shell · Freigabe in Glyph |
+| +1 | **^_tick** | DeepSeek V4 Flash · Routine-Kopf (Daily/Inbox-Batch, Plan & Aktivität) + Workspace Read/Write/Shell · Freigabe in Glyph |
 | +2 | **°_Agent** | Vault/Tools + Cloud-Antwort intern (B+, Engine; id `glyph-agent`) |
 
 Heute ist grok **nur noch das Standard-Profil**, nicht das Produkt. Alle Profile teilen
@@ -105,8 +105,8 @@ Glyph bleibt auf **127.0.0.1**. Nach draußen nur **glyph-ui.com**.
 
 | Was | Adresse | Fläche |
 |-----|---------|--------|
-| Lokal (Mac) | http://127.0.0.1:5174 | **Admin** — Grok Build, ^_Code, °_Agent |
-| **glyph-ui.com** | `https://glyph-ui.com/` | **Web** — nur °_Agent, Sitz `web`, Passwort |
+| Lokal (Mac) | http://127.0.0.1:5174 | **Admin** — Grok Build, ^_tick, °_Agent |
+| **glyph-ui.com** | `https://glyph-ui.com/` | **Web** — nur °_Agent, Sitz `web`, Passwort · kostenlos nutzbar, Spenden-Button (Ko-fi) im Header |
 
 Web-Tor: Passwort in `~/.glyph-ui/web-password` (oder `GLYPH_WEB_PASSWORD`).  
 Details: [HANDBUCH.md § Remote](./HANDBUCH.md#remote).
@@ -142,7 +142,7 @@ Auf `main` und bei Pull Requests läuft dasselbe über GitHub Actions (Node 22 �
 
 1. Nachricht tippen: Desk **Enter** senden (Shift+Enter = Zeile). Handy: Tastatur-Enter = Zeile, Kopf = senden
 2. Streaming: Antwort, Thoughts, Tool-Aufrufe
-3. Composer-Aktion wählen: **Chat** (normal), **Deep Search** (nur grok), **Fork** (Session branchen)
+3. Composer-Aktion wählen: **Chat** (normal; °_Agent heißt **Search**), **Deep Search** (nur grok), **Fork** (Session branchen)
 4. Status-Button **verbunden** / **offline**: klicken startet den aktiven Agenten neu
 5. **Neue Session** startet eine frische ACP-Session
 6. **Overview** listet lokale Grok-Sessions (nur grok-Profil) und erlaubt Schließen mit optionalem Wiki-Archiv (**Löschen** ≈ TUI `/delete`)
@@ -158,7 +158,7 @@ Auswahl in der UI (Header), Start-Profil via `GLYPH_AGENT` (Default `grok`).
 | Profil | Spawnt | Hinweis |
 |--------|--------|---------|
 | **grok** (Default) | `grok agent --always-approve --no-leader stdio` | Volle Fähigkeiten (Sessions, Deep Search, Aktivität) |
-| **^_Code** | `node server/glyph-agent-acp.mjs` + `GLYPH_AGENT_MODE=code` | Workspace-Tools, Write/Shell mit Glyph-Freigabe; Modell aus Graph/Anbindung |
+| **^_tick** | `node server/glyph-agent-acp.mjs` + `GLYPH_AGENT_MODE=tick` | Routine-Kopf: `memory-wiki/Routinen/` (Daily/Inbox/…) + Plan & Aktivität per Chat; Plan-Tab zeigt die **Routine-Lage** (offene To-dos, offene Aufgaben, Job-Ordner); erbt Workspace-Tools, Write/Shell mit Glyph-Freigabe |
 | **°_Agent** (id `glyph-agent`) | `node server/glyph-agent-acp.mjs` | Dünne Brücke zum lokalen glyph-agent-Dienst (Vault/Tools + Cloud-Antwort) |
 
 **°_Agent** nutzt die Engine `~/glyph-agent/` — lokale Tool-/Recherche-Schicht:
@@ -186,7 +186,7 @@ hängt vom aktiven Profil ab.
 | Profil | Textanhänge | Bilder | Hinweis |
 |--------|-------------|--------|---------|
 | **grok** | ✅ | ✅ | native ACP-Unterstützung gemäß Grok-Profil |
-| **^_Code** | ✅ | ✅ | Direct `deepseek-v4-flash-vision-exp` (`image_url`); Write/Shell brauchen Freigabe (Einmal / Auftrag / Task) |
+| **^_tick** | ✅ | ✅ | Direct `deepseek-v4-flash-vision-exp` (`image_url`); Write/Shell brauchen Freigabe (Einmal / Auftrag / Task) |
 | **°_Agent** | ✅ | ✅ | Direct `deepseek-v4-flash-vision-exp` (`image_url`) |
 
 ### Erlaubte Formate & Limits
@@ -195,7 +195,7 @@ hängt vom aktiven Profil ab.
 - Whitelist-MIME: `text/*`, `application/json`, `application/xml`, `text/yaml`, `text/x-log`
 - max. **2 MiB** extrahierte Zeichen pro Anhang · max. **4 MiB** Byte-Größe
 
-**Bilder** (grok, °_Agent, ^_Code): `image/png`, `image/jpeg`, `image/webp`, `image/gif`
+**Bilder** (grok, °_Agent, ^_tick): `image/png`, `image/jpeg`, `image/webp`, `image/gif`
 - max. **4 MiB** pro Bild
 
 **Allgemein:** max. **8 Anhänge pro Nachricht** · max. **12 MiB** pro Datei (Upload-Limit)
@@ -208,7 +208,7 @@ hängt vom aktiven Profil ab.
 - **Zu großer Anhang:** klare Fehlermeldung (`Textanhang zu groß` / `Bild zu groß`) —
   keine stille Verwerfung.
 - **Leerer Anhang:** Hinweis `Übergangen (leer)`.
-- **Bilder bei `glyph-agent` / `^_Code`:** OpenAI-`image_url` (data-URI) an Direct
+- **Bilder bei `glyph-agent` / `^_tick`:** OpenAI-`image_url` (data-URI) an Direct
   `deepseek-v4-flash-vision-exp`. Andere Direct-Modelle (Flash/Pro ohne Vision) → API 400.
 
 ### Beispiele

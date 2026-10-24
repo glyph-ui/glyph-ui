@@ -9,10 +9,20 @@ PLIST_DST="$HOME/Library/LaunchAgents/${LABEL}.plist"
 LOG_DIR="$HOME/Library/Logs/glyph-ui"
 UID_NUM="$(id -u)"
 DOMAIN="gui/${UID_NUM}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # Production default — matches server/index.js and start-service.sh
 PORT="${PORT:-5174}"
 
-if [[ -f "$PLIST_DST" ]]; then
+# .env gewinnt (start-service.sh liest sie ebenfalls), dann das Plist.
+if [[ "$PORT" == "5174" && -f "$ROOT/.env" ]]; then
+  PORT="$(grep -E '^[[:space:]]*(export[[:space:]]+)?PORT=' "$ROOT/.env" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)"
+  PORT="${PORT%$'\r'}"
+  if [[ "$PORT" == \"*\" || "$PORT" == \'*\' ]]; then
+    PORT="${PORT:1:${#PORT}-2}"
+  fi
+  PORT="${PORT:-5174}"
+fi
+if [[ "$PORT" == "5174" && -f "$PLIST_DST" ]]; then
   PORT="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:PORT' "$PLIST_DST" 2>/dev/null || echo 5174)"
 fi
 

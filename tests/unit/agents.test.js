@@ -61,10 +61,10 @@ test("resolveClaudeCommand (legacy helper)", async (t) => {
 test("buildAgentProfiles", async (t) => {
   const profiles = buildAgentProfiles({ PATH: "/nonexistent-dir-xyz" });
 
-  await t.test("offers three profiles: grok, _code, glyph-agent", () => {
+  await t.test("offers three profiles: grok, _tick, glyph-agent", () => {
     assert.deepEqual(
       profiles.map((p) => p.id),
-      ["grok", "_code", "glyph-agent"],
+      ["grok", "_tick", "glyph-agent"],
     );
   });
 
@@ -88,17 +88,19 @@ test("buildAgentProfiles", async (t) => {
     assert.equal(findAgent(custom, "grok").bin, "/usr/local/bin/grok");
   });
 
-  await t.test("^_Code uses glyph-agent-acp with MODE=code", () => {
-    const code = findAgent(profiles, "_code");
-    assert.equal(code.label, "^_Code");
-    assert.ok(code.args.some((a) => String(a).includes("glyph-agent-acp")));
-    assert.equal(code.env?.GLYPH_AGENT_MODE, "code");
-    assert.deepEqual(code.capabilities, {
+  await t.test("^_tick uses glyph-agent-acp with MODE=tick and inherits code tools", () => {
+    const tick = findAgent(profiles, "_tick");
+    assert.equal(tick.label, "^_tick");
+    assert.ok(tick.args.some((a) => String(a).includes("glyph-agent-acp")));
+    assert.equal(tick.env?.GLYPH_AGENT_MODE, "tick");
+    assert.equal(tick.env?.GLYPH_AGENT_ACP_NAME, "^_tick");
+    assert.deepEqual(tick.capabilities, {
       deepSearch: false,
       swarm: true,
       activity: false,
       sessionList: false,
       sessionHistory: true,
+      routines: true,
     });
   });
 
@@ -109,6 +111,7 @@ test("buildAgentProfiles", async (t) => {
       activity: true,
       sessionList: true,
       sessionHistory: true,
+      routines: false,
     });
     assert.deepEqual(findAgent(profiles, "glyph-agent").capabilities, {
       deepSearch: false,
@@ -116,6 +119,7 @@ test("buildAgentProfiles", async (t) => {
       activity: false,
       sessionList: false,
       sessionHistory: true,
+      routines: false,
     });
     assert.equal(findAgent(profiles, "glyph-agent").env?.GLYPH_AGENT_MODE, "agent");
   });
@@ -125,13 +129,16 @@ test("resolveAgent", async (t) => {
   const profiles = buildAgentProfiles({ PATH: "" });
 
   await t.test("returns the requested profile", () => {
-    assert.equal(resolveAgent(profiles, "_code").id, "_code");
+    assert.equal(resolveAgent(profiles, "_tick").id, "_tick");
   });
 
-  await t.test("maps claude/code aliases to _code", () => {
-    assert.equal(resolveAgent(profiles, "claude").id, "_code");
-    assert.equal(resolveAgent(profiles, "code").id, "_code");
-    assert.equal(resolveAgent(profiles, "^_Code").id, "_code");
+  await t.test("maps legacy claude/code/_code/^_Code aliases to _tick", () => {
+    assert.equal(resolveAgent(profiles, "claude").id, "_tick");
+    assert.equal(resolveAgent(profiles, "code").id, "_tick");
+    assert.equal(resolveAgent(profiles, "_code").id, "_tick");
+    assert.equal(resolveAgent(profiles, "^_Code").id, "_tick");
+    assert.equal(resolveAgent(profiles, "^_tick").id, "_tick");
+    assert.equal(resolveAgent(profiles, "tick").id, "_tick");
   });
 
   await t.test("maps Grok Build to grok", () => {
@@ -162,12 +169,13 @@ test("publicAgent", async (t) => {
   const profiles = buildAgentProfiles({ PATH: "/nonexistent-dir-xyz" });
 
   await t.test("flattens command for the header tooltip", () => {
-    const wire = publicAgent(findAgent(profiles, "_code"));
-    assert.equal(wire.id, "_code");
-    assert.equal(wire.label, "^_Code");
+    const wire = publicAgent(findAgent(profiles, "_tick"));
+    assert.equal(wire.id, "_tick");
+    assert.equal(wire.label, "^_tick");
     assert.ok(wire.command.includes("glyph-agent-acp"));
     assert.equal(typeof wire.hint, "string");
     assert.ok(wire.hint.toLowerCase().includes("deepseek"));
+    assert.ok(wire.hint.toLowerCase().includes("routine"));
   });
 
   await t.test("Grok Build is the public label for grok", () => {

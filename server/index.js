@@ -38,6 +38,7 @@ import { promisify } from "node:util";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
+import dns from "node:dns/promises";
 import { pathToFileURL } from "node:url";
 
 const execFileAsync = promisify(execFile);
@@ -56,13 +57,23 @@ import {
   isWebGateExempt,
   isWebOrigin,
   isWebRequest,
+  normalizeRequestPath,
+  grantWebAccess,
   parseCookie,
   parseStoredWebSessions,
+  publicWebAccess,
   serializeWebSessions,
   validateNewWebPassword,
   WEB_SESSION_TTL_S,
+  sessionTtlS,
   WEB_SESSIONS_MAX,
 } from "./webSurface.mjs";
+import {
+  filterHits as webFilterHits,
+  filterVaults as webFilterVaults,
+  isPathAllowed as webPathAllowed,
+  loadWebScope,
+} from "./webScope.mjs";
 import {
   VAULT_FIND_TIMEOUT_MS,
   vaultFindProxyCatch,
@@ -72,6 +83,7 @@ import {
   capText,
   extractReadable,
   isEmbeddable,
+  isPrivateHost,
   parsePageUrl,
 } from "./webExtract.mjs";
 import {
@@ -102,7 +114,7 @@ import {
   commandsBroadcastPayload,
   normalizeAvailableCommands,
 } from "./commands.js";
-import { listSkillsForProfile } from "./skills.js";
+import { listSkillsForProfile, withWebExtraSkills } from "./skills.js";
 import {
   planBroadcastPayload,
   planUpdateFromSession,
@@ -145,12 +157,14 @@ import {
   syncModelsIfMismatch,
   readBindingsFile,
   bindingsPath,
+  isLoopbackAgentUrl,
 } from "./bindings.js";
 import {
   localStatus,
   localStart,
   localStop,
   localTouch,
+  startLocalModelTicker,
 } from "./localModel.mjs";
 import {
   getGlyphRoot,
@@ -178,6 +192,19 @@ const STATE_DIR =
   path.join(os.homedir(), ".glyph-ui");
 /** Load UI-saved API keys into process.env (does not override existing env). */
 await loadBindingsIntoEnv(path.join(STATE_DIR, "bindings.json"));
+
+/**
+ * Ziel für Modell-/Key-Pushes. Nur Loopback — ein in bindings.json gesetzter
+ * Fremd-Host darf keine Klartext-Keys bekommen. Leer = Push verweigern.
+ */
+function localAgentUrl(saved = null) {
+  const raw =
+    String(
+      process.env.GLYPH_AGENT_URL || saved?.settings?.GLYPH_AGENT_URL || "",
+    ).trim() || "http://127.0.0.1:18899";
+  return isLoopbackAgentUrl(raw) ? raw : "";
+}
+
 const UPLOAD_DIR = path.join(STATE_DIR, "uploads");
 const MAX_ATTACHMENT_BYTES = Number(
   process.env.GLYPH_UI_MAX_ATTACHMENT || 12 * 1024 * 1024,
@@ -275,34 +302,52 @@ function isAllowedWsOrigin(origin) {
 /** token → issuedAt (ms). RAM-Spiegel von web-sessions.json. */
 const webSessions = new Map();
 let webPassword = "";
+/**
+ * Optionales Gast-Passwort. Leer = kein Gastzugang.
+ *
+ * Zwei getrennte Passwörter statt eines gemeinsamen: der Gast kommt herein und
+ * darf chatten, aber keine Einstellungen ändern — insbesondere nicht das
+ * Passwort. Mit nur einem Passwort war jeder Gast technisch der Hauptnutzer.
+ * Gespeichert als eigene Datei (0600), gesetzt vom Hauptnutzer über die
+ * Web-Fläche.
+ */
+let webGuestPassword = "";
 const WEB_SESSIONS_FILE = path.join(STATE_DIR, "web-sessions.json");
-const WEB_SESSION_TTL_MS = WEB_SESSION_TTL_S * 1000;
 /** Env password cannot be changed from the Web-Fläche (would revert on restart). */
 const webPasswordFromEnv = Boolean(
   String(process.env.GLYPH_WEB_PASSWORD || "").trim(),
 );
 const WEB_PASSWORD_FILE = path.join(STATE_DIR, "web-password");
+const WEB_GUEST_PASSWORD_FILE = path.join(STATE_DIR, "web-password-guest");
 
 async function loadWebPassword() {
   const fromEnv = String(process.env.GLYPH_WEB_PASSWORD || "").trim();
   if (fromEnv) {
     webPassword = fromEnv;
-    return;
-  }
-  try {
-    const existing = String(await fs.readFile(WEB_PASSWORD_FILE, "utf8")).trim();
+  } else {
+    let existing = "";
+    try {
+      existing = String(await fs.readFile(WEB_PASSWORD_FILE, "utf8")).trim();
+    } catch {
+      /* create below */
+    }
     if (existing) {
       webPassword = existing;
-      return;
+    } else {
+      const generated = crypto.randomBytes(16).toString("hex");
+      await fs.mkdir(STATE_DIR, { recursive: true });
+      await fs.writeFile(WEB_PASSWORD_FILE, `${generated}\n`, { mode: 0o600 });
+      webPassword = generated;
+      console.warn(`[glyph] Web-Tor: Passwort in ${WEB_PASSWORD_FILE}`);
     }
-  } catch {
-    /* create below */
   }
-  const generated = crypto.randomBytes(16).toString("hex");
-  await fs.mkdir(STATE_DIR, { recursive: true });
-  await fs.writeFile(WEB_PASSWORD_FILE, `${generated}\n`, { mode: 0o600 });
-  webPassword = generated;
-  console.warn(`[glyph] Web-Tor: Passwort in ${WEB_PASSWORD_FILE}`);
+  // Gast-Passwort ist freiwillig; fehlt die Datei, gibt es keinen Gastzugang.
+  try {
+    const guest = String(await fs.readFile(WEB_GUEST_PASSWORD_FILE, "utf8")).trim();
+    if (guest && guest !== webPassword) webGuestPassword = guest;
+  } catch {
+    /* kein Gastzugang */
+  }
 }
 
 async function saveWebPassword(next) {
@@ -311,40 +356,115 @@ async function saveWebPassword(next) {
   webPassword = next;
 }
 
+/**
+ * Gast-Passwort setzen oder löschen. Leerer Wert entfernt den Gastzugang.
+ * Weigert sich, wenn das Gast-Passwort dem Haupt-Passwort entspricht — sonst
+ * wäre die Rollentrennung wertlos.
+ */
+async function saveWebGuestPassword(next) {
+  const clean = String(next || "").trim();
+  await fs.mkdir(STATE_DIR, { recursive: true });
+  if (!clean) {
+    await fs.rm(WEB_GUEST_PASSWORD_FILE, { force: true });
+    webGuestPassword = "";
+    return;
+  }
+  if (clean === webPassword) {
+    throw new Error("Gast-Passwort darf nicht dem Haupt-Passwort entsprechen");
+  }
+  await fs.writeFile(WEB_GUEST_PASSWORD_FILE, `${clean}\n`, { mode: 0o600 });
+  webGuestPassword = clean;
+}
+
 async function loadWebSessions() {
   try {
     const raw = JSON.parse(await fs.readFile(WEB_SESSIONS_FILE, "utf8"));
     for (const row of parseStoredWebSessions(raw, Date.now())) {
-      webSessions.set(row.token, row.iat);
+      webSessions.set(row.token, {
+        iat: row.iat,
+        access: row.access || grantWebAccess({ source: "password" }).access,
+      });
     }
   } catch {
     /* missing or unreadable — start empty */
   }
 }
 
+function sessionIat(row) {
+  return typeof row === "number" ? row : Number(row?.iat) || 0;
+}
+
 async function persistWebSessions() {
-  const entries = [...webSessions.entries()].map(([token, iat]) => ({
-    token,
-    iat,
-  }));
+  const entries = [...webSessions.entries()].map(([token, row]) => {
+    const item = { token, iat: sessionIat(row) };
+    if (row?.access?.opened) item.access = row.access;
+    return item;
+  });
   await fs.mkdir(STATE_DIR, { recursive: true });
   await fs.writeFile(WEB_SESSIONS_FILE, serializeWebSessions(entries), {
     mode: 0o600,
   });
 }
 
-function trimWebSessions(now = Date.now()) {
-  for (const [token, iat] of webSessions) {
-    if (now - iat >= WEB_SESSION_TTL_MS) webSessions.delete(token);
+/**
+ * Web-Sitzung beendet → zugehörigen ACP-Sitz beenden und Prozess freigeben.
+ * Ohne das blieben für jedes abgelaufene/evictete Login ein Bridge-Objekt und
+ * ein glyph-agent-Kindprozess bis zum Serverende stehen.
+ */
+function stopWebSeat(token) {
+  if (!token || !seats) return;
+  const key = webSeatKey(token);
+  const b = seats.remove(key);
+  if (!b) return;
+  Promise.resolve()
+    .then(() => b.stop({ silent: true }))
+    .catch(() => {
+      /* Sitz war schon weg */
+    });
+}
+
+function stopAllWebSeats() {
+  if (!seats) return;
+  for (const key of seats.keys()) {
+    if (!isWebSeatKey(key)) continue;
+    const b = seats.remove(key);
+    if (b) {
+      Promise.resolve()
+        .then(() => b.stop({ silent: true }))
+        .catch(() => {});
+    }
   }
-  if (webSessions.size <= WEB_SESSIONS_MAX) return;
-  const sorted = [...webSessions.entries()].sort((a, b) => a[1] - b[1]);
+}
+
+/** @returns {string[]} entfernte Token (fürs Beenden der Sitze) */
+function trimWebSessions(now = Date.now()) {
+  const removed = [];
+  for (const [token, row] of webSessions) {
+    // Gäste laufen nach 30 Minuten ab, der Hauptzugang nach 30 Tagen.
+    if (now - sessionIat(row) >= sessionTtlS(row?.access) * 1000) {
+      webSessions.delete(token);
+      removed.push(token);
+    }
+  }
+  if (webSessions.size <= WEB_SESSIONS_MAX) return removed;
+  const sorted = [...webSessions.entries()].sort(
+    (a, b) => sessionIat(a[1]) - sessionIat(b[1]),
+  );
   while (webSessions.size > WEB_SESSIONS_MAX) {
     const oldest = sorted.shift();
     if (!oldest) break;
     webSessions.delete(oldest[0]);
+    removed.push(oldest[0]);
   }
+  return removed;
 }
+
+/** Regelmäßig abgelaufene Web-Sitzungen samt ACP-Prozessen einsammeln. */
+const webSessionSweep = setInterval(() => {
+  for (const token of trimWebSessions()) stopWebSeat(token);
+}, 5 * 60 * 1000);
+if (typeof webSessionSweep.unref === "function") webSessionSweep.unref();
+
 
 function webSessionToken(req) {
   return parseCookie(req?.headers?.cookie, WEB_COOKIE);
@@ -353,31 +473,57 @@ function webSessionToken(req) {
 function hasWebSession(req) {
   const token = webSessionToken(req);
   if (!token) return false;
-  const iat = webSessions.get(token);
-  if (iat == null) return false;
-  if (Date.now() - iat >= WEB_SESSION_TTL_MS) {
+  const row = webSessions.get(token);
+  if (!row) return false;
+  const iat = sessionIat(row);
+  // Dauer hängt an der Rolle: Gäste 30 Minuten, Hauptzugang 30 Tage.
+  if (Date.now() - iat >= sessionTtlS(row?.access) * 1000) {
     webSessions.delete(token);
-    void persistWebSessions();
+    stopWebSeat(token);
+    void persistWebSessions().catch(() => {});
     return false;
   }
   return true;
 }
 
-function issueWebSession() {
+/**
+ * Rolle der aktuellen Web-Sitzung: „owner" oder „guest" (leer = keine Sitzung).
+ *
+ * Alte Sitzungen aus der Zeit vor der Rollentrennung haben kein `role`-Feld.
+ * Sie gelten als „owner", weil sie mit dem damals einzigen Passwort entstanden
+ * sind — sonst würden bestehende Geräte nach dem Update ausgesperrt.
+ */
+function webSessionRole(req) {
+  if (!hasWebSession(req)) return "";
+  const token = webSessionToken(req);
+  const access = webSessions.get(token)?.access;
+  return access?.role === "guest" ? "guest" : "owner";
+}
+
+function issueWebSession(access) {
   const token = crypto.randomBytes(24).toString("hex");
-  webSessions.set(token, Date.now());
-  trimWebSessions();
-  void persistWebSessions();
+  const grant = access?.opened
+    ? access
+    : grantWebAccess({ source: "password" }).access;
+  webSessions.set(token, { iat: Date.now(), access: grant });
+  for (const old of trimWebSessions()) stopWebSeat(old);
+  void persistWebSessions().catch(() => {});
   return token;
 }
 
-function webCookieHeader(token) {
+/**
+ * Sitzungs-Cookie. Die Lebensdauer richtet sich nach der Rolle: ein Gast-Cookie
+ * verfällt nach 30 Minuten, das des Hauptzugangs nach 30 Tagen. Sonst würde der
+ * Browser ein Gast-Cookie wochenlang mitschicken, auch wenn der Server die
+ * Sitzung längst verworfen hat.
+ */
+function webCookieHeader(token, maxAgeSeconds = WEB_SESSION_TTL_S) {
   const parts = [
     `${WEB_COOKIE}=${encodeURIComponent(token)}`,
     "HttpOnly",
     "Path=/",
     "SameSite=Lax",
-    "Max-Age=2592000",
+    `Max-Age=${Math.max(60, Math.floor(Number(maxAgeSeconds) || WEB_SESSION_TTL_S))}`,
   ];
   // Tunnel is HTTPS; local preview of seat=web stays on http.
   parts.push("Secure");
@@ -613,7 +759,8 @@ const wss = new WebSocketServer({
 
 // Default JSON body limit; large payloads use a route-local parser.
 app.use((req, res, next) => {
-  if (req.path === "/api/stt" || req.path === "/api/attachments") return next();
+  const p = normalizeRequestPath(req.path);
+  if (p === "/api/stt" || p === "/api/attachments") return next();
   return express.json({ limit: "1mb" })(req, res, next);
 });
 
@@ -871,7 +1018,7 @@ app.use((req, res, next) => {
   if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
     return next();
   }
-  if (!req.path.startsWith("/api")) return next();
+  if (!normalizeRequestPath(req.path).startsWith("/api")) return next();
   if (ALLOW_REMOTE) return next();
   const ip = req.socket?.remoteAddress || "";
   if (!isLoopbackAddress(ip)) {
@@ -1045,12 +1192,20 @@ app.get("/api/health", (req, res) => {
 
 app.get("/api/web-gate", (req, res) => {
   const web = isWebRequest(req);
+  const open = web ? hasWebSession(req) : true;
   res.setHeader("Cache-Control", "no-store");
-  res.json({
+  const body = {
     required: web,
-    ok: web ? hasWebSession(req) : true,
+    ok: open,
     seat: web ? WEB_SEAT : parseSeat(req.get("x-glyph-seat") || req.query?.seat),
-  });
+  };
+  if (web && open) {
+    const row = webSessions.get(webSessionToken(req));
+    body.access = publicWebAccess(
+      row?.access || grantWebAccess({ source: "password" }).access,
+    );
+  }
+  res.json(body);
 });
 
 app.post("/api/web-gate", (req, res) => {
@@ -1063,13 +1218,26 @@ app.post("/api/web-gate", (req, res) => {
     res.status(403).json({ error: "Forbidden", gate: true });
     return;
   }
-  if (!passwordsMatch(req.body?.password, webPassword)) {
+  // Haupt-Passwort zuerst, dann Gast. Beide öffnen die Tür, aber mit
+  // unterschiedlicher Rolle: nur „owner" darf Einstellungen ändern.
+  let role = "";
+  if (passwordsMatch(req.body?.password, webPassword)) {
+    role = "owner";
+  } else if (webGuestPassword && passwordsMatch(req.body?.password, webGuestPassword)) {
+    role = "guest";
+  }
+  if (!role) {
     res.status(401).json({ error: "Passwort falsch", gate: true });
     return;
   }
-  const token = issueWebSession();
-  res.setHeader("Set-Cookie", webCookieHeader(token));
-  res.json({ ok: true, required: true });
+  const grant = grantWebAccess({ source: "password", role });
+  const token = issueWebSession(grant.access);
+  res.setHeader("Set-Cookie", webCookieHeader(token, sessionTtlS(grant.access)));
+  res.json({
+    ok: true,
+    required: true,
+    access: publicWebAccess(grant.access),
+  });
 });
 
 app.post("/api/web-gate/password", async (req, res) => {
@@ -1079,6 +1247,13 @@ app.post("/api/web-gate/password", async (req, res) => {
   }
   if (!hasWebSession(req)) {
     res.status(401).json({ error: "Web-Tor", gate: true });
+    return;
+  }
+  // Rollenprüfung: ein Gast darf den Zugang nicht übernehmen. Ohne diese
+  // Sperre war jeder, der das (gemeinsame) Passwort kannte, damit auch der
+  // Hauptnutzer — er konnte das Passwort neu setzen und alle aussperren.
+  if (webSessionRole(req) !== "owner") {
+    res.status(403).json({ error: "Nur der Hauptzugang darf das Passwort ändern" });
     return;
   }
   if (webPasswordFromEnv) {
@@ -1103,6 +1278,11 @@ app.post("/api/web-gate/password", async (req, res) => {
   }
   try {
     await saveWebPassword(check.password);
+    // Ein Gast-Passwort, das dem neuen Haupt-Passwort entspricht, wäre keine
+    // Trennung mehr — dann lieber den Gastzugang schließen.
+    if (webGuestPassword === webPassword) {
+      await saveWebGuestPassword("");
+    }
   } catch (err) {
     res.status(500).json({
       error: err instanceof Error ? err.message : String(err),
@@ -1110,10 +1290,70 @@ app.post("/api/web-gate/password", async (req, res) => {
     return;
   }
   webSessions.clear();
+  stopAllWebSeats();
   await persistWebSessions();
-  const token = issueWebSession();
-  res.setHeader("Set-Cookie", webCookieHeader(token));
+  const ownerAccess = grantWebAccess({ source: "password", role: "owner" }).access;
+  const token = issueWebSession(ownerAccess);
+  res.setHeader("Set-Cookie", webCookieHeader(token, sessionTtlS(ownerAccess)));
   res.json({ ok: true });
+});
+
+/**
+ * Gastzugang verwalten — nur der Hauptzugang.
+ * GET  /api/web-gate/guest  → { enabled }
+ * POST /api/web-gate/guest  { password } → setzt oder löscht (leer) den Gastzugang
+ */
+app.get("/api/web-gate/guest", (req, res) => {
+  if (!isWebRequest(req)) {
+    res.status(403).json({ error: "Nur auf der Web-Fläche" });
+    return;
+  }
+  if (!hasWebSession(req)) {
+    res.status(401).json({ error: "Web-Tor", gate: true });
+    return;
+  }
+  const owner = webSessionRole(req) === "owner";
+  res.json({ enabled: Boolean(webGuestPassword), owner });
+});
+
+app.post("/api/web-gate/guest", async (req, res) => {
+  if (!isWebRequest(req)) {
+    res.status(403).json({ error: "Nur auf der Web-Fläche" });
+    return;
+  }
+  if (!hasWebSession(req)) {
+    res.status(401).json({ error: "Web-Tor", gate: true });
+    return;
+  }
+  if (webSessionRole(req) !== "owner") {
+    res.status(403).json({ error: "Nur der Hauptzugang darf den Gastzugang ändern" });
+    return;
+  }
+  const origin = req.get("origin") || "";
+  if (origin && !isAllowedWsOrigin(origin)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  // Kein zweites Passwort-Abfragen: wer hier ankommt, hat bereits eine gültige
+  // Hauptzugangs-Sitzung (oben geprüft). Das Gast-Passwort ist ein schwächerer
+  // Zugang und sperrt niemanden aus — eine zusätzliche Abfrage war reine
+  // Schikane und hat nur verwirrt („oben das aktuelle Passwort eintragen?").
+  // Beim ÄNDERN des eigenen Passworts bleibt die Abfrage Pflicht, weil das
+  // alle Sitzungen ungültig macht.
+  const next = String(req.body?.password || "").trim();
+  if (next && next.length < 4) {
+    res.status(400).json({ error: "Das Gast-Passwort braucht mindestens 4 Zeichen" });
+    return;
+  }
+  try {
+    await saveWebGuestPassword(next);
+  } catch (err) {
+    res.status(400).json({
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return;
+  }
+  res.json({ ok: true, enabled: Boolean(webGuestPassword) });
 });
 
 /**
@@ -1126,11 +1366,34 @@ app.get("/api/skills", async (req, res) => {
     const profile = String(
       req.query.profile || activeId || DEFAULT_AGENT_ID || "grok",
     ).trim();
-    const result = await listSkillsForProfile(profile, {
+    let result = await listSkillsForProfile(profile, {
       home: os.homedir(),
       cwd: WORK_CWD,
       env: process.env,
     });
+    // glyph-ui.com: docx / pdf / review liegen nur im Grok-Bundled-Bestand
+    // und fehlen sonst im °_Agent-Katalog. Schreibtisch bleibt ohne sie.
+    if (isWebRequest(req)) {
+      result = await withWebExtraSkills(result, { home: os.homedir() });
+    }
+    /**
+     * Gäste auf der Web-Fläche: nur ausdrücklich freigegebene Skills
+     * (`customer: true`) und keine absoluten Pfade. Das Feld wurde bisher
+     * geparst, aber nirgends durchgesetzt — Gäste sahen Betriebs-Skills inkl.
+     * Home-Pfaden. Der Hauptzugang behält die volle Palette.
+     */
+    if (isWebRequest(req) && webSessionRole(req) === "guest") {
+      result = {
+        ...result,
+        roots: [],
+        skills: result.skills
+          .filter((s) => s.customer === true)
+          .map((s) => {
+            const { path: _path, ...rest } = s;
+            return rest;
+          }),
+      };
+    }
     res.json(result);
   } catch (err) {
     res.status(500).json({
@@ -1515,7 +1778,7 @@ async function glyphAgentBaseUrl() {
  */
 function proxyAgent(
   prefix,
-  { postTimeout = 30000, otherTimeout = 15000, extra = [] } = {},
+  { postTimeout = 30000, otherTimeout = 15000, extra = [], filterGet = null } = {},
 ) {
   const pass400 = (method) => method === "POST" || method === "PATCH";
   const timeoutOf = (method) => (method === "POST" ? postTimeout : otherTimeout);
@@ -1547,7 +1810,7 @@ function proxyAgent(
         : pass400(method) && r.status === 400
           ? 400
           : 502;
-      res.status(status).json(json);
+      res.status(status).json(status === 200 && filterGet ? filterGet(json, req) : json);
     } catch (err) {
       res.status(502).json({
         ok: false,
@@ -1601,7 +1864,12 @@ function proxyAgent(
 /**
  * Kabelsalat — Vault-Registry (glyph-agent /vaults → ~/.glyph/vaults.json).
  */
-proxyAgent("vaults", { extra: ["pins"] });
+proxyAgent("vaults", {
+  extra: ["pins"],
+  // Web-Flaeche: nur freigegebene Sammlungen zeigen, keine Pfade (2026-10-03).
+  filterGet: (json, req) =>
+    isWebRequest(req) ? webFilterVaults(json, loadWebScope(STATE_DIR)) : json,
+});
 
 /**
  * Manuelle Ordner-Suche (°_Agent): POST /api/vault/find → glyph-agent /vault/find
@@ -1617,6 +1885,11 @@ app.post("/api/vault/find", async (req, res) => {
     });
     const json = await r.json().catch(() => ({}));
     if (r.ok) {
+      // Web-Flaeche: Freigabe serverseitig (Pruefung 2026-10-03) — nur
+      // erlaubte Sammlungen/Ordner, Namen in Auszuegen maskiert. Admin sieht alles.
+      if (isWebRequest(req)) {
+        json.hits = webFilterHits(json.hits, loadWebScope(STATE_DIR));
+      }
       res.status(200).json(json);
       return;
     }
@@ -1650,6 +1923,12 @@ app.get("/api/vault/file", async (req, res) => {
   const p = String(req.query?.path || "").trim();
   if (!p) {
     res.status(400).json({ ok: false, error: "path fehlt" });
+    return;
+  }
+  // Web-Flaeche: nur freigegebene Pfade (2026-10-03). Der Agent prueft zusaetzlich
+  // Privat/Blocklisten; die Mandanten-Freigabe gilt hier.
+  if (isWebRequest(req) && !webPathAllowed(p, loadWebScope(STATE_DIR))) {
+    res.status(404).json({ ok: false, error: "nicht freigegeben" });
     return;
   }
   const format = String(req.query?.format || "").trim().toLowerCase();
@@ -1697,12 +1976,38 @@ const WEB_PAGE_TTL_MS = 5 * 60 * 1000;
 const WEB_PAGE_CACHE_MAX = 32;
 
 /** Abruf mit Umleitungsprüfung: jedes Ziel muss die URL-Sperre passieren. */
+/**
+ * DNS-Rebinding-Schutz: Namen, die auf interne Adressen zeigen, sind ebenso
+ * gesperrt wie literale IPs. Prüft jede Adresse des Namens.
+ */
+async function resolvesToPrivateHost(hostname) {
+  const host = String(hostname || "").replace(/^\[|\]$/g, "");
+  if (!host || isPrivateHost(host)) return true;
+  // Literale IPs hat isPrivateHost schon beantwortet.
+  try {
+    const rows = await dns.lookup(host, { all: true, verbatim: true });
+    return rows.some((row) => isPrivateHost(row.address));
+  } catch {
+    // Nicht auflösbar → fetch scheitert ohnehin; nicht als privat werten.
+    return false;
+  }
+}
+
+async function assertPublicPageUrl(raw) {
+  const parsed = parsePageUrl(raw);
+  if (!parsed.ok) return parsed;
+  const host = new URL(parsed.url).hostname;
+  if (await resolvesToPrivateHost(host)) {
+    return { ok: false, error: "lokale Adressen sind gesperrt" };
+  }
+  return parsed;
+}
+
 async function fetchWebPage(startUrl) {
   let url = startUrl;
   for (let hop = 0; hop < 5; hop += 1) {
-    const parsed = parsePageUrl(url);
+    const parsed = await assertPublicPageUrl(url);
     if (!parsed.ok) throw new Error(parsed.error);
-    // eslint-disable-next-line no-await-in-loop
     const r = await fetch(parsed.url, {
       redirect: "manual",
       signal: AbortSignal.timeout(12000),
@@ -1860,6 +2165,26 @@ app.get("/api/tasks/:id/prompt", async (req, res) => {
     res.status(r.ok ? 200 : r.status === 404 ? 404 : 502).json(json);
   } catch (err) {
     res.status(502).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+/**
+ * Proxy Routine-Lage (glyph-agent /routines/overview) — ^_tick im Plan-Tab:
+ * Zähler offener To-dos/Aufgaben + Job-Ordner (Daily/Inbox/Blocked/Done).
+ */
+app.get("/api/routines/overview", async (_req, res) => {
+  try {
+    const base = await glyphAgentBaseUrl();
+    const r = await fetch(`${base}/routines/overview`, {
+      signal: AbortSignal.timeout(15000),
+    });
+    const json = await r.json().catch(() => ({}));
+    res.status(r.ok ? 200 : 502).json(json);
+  } catch (err) {
+    res.status(502).json({
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 });
 
@@ -2037,6 +2362,19 @@ app.get("/api/bindings", async (_req, res) => {
 app.put("/api/bindings", async (req, res) => {
   try {
     const body = req.body || {};
+    // Die Engine ist lokal. Ein fremder Agent-Host würde beim Push die
+    // hinterlegten Keys mitnehmen — deshalb hier hart ablehnen.
+    if (
+      Object.prototype.hasOwnProperty.call(body, "GLYPH_AGENT_URL") &&
+      String(body.GLYPH_AGENT_URL || "").trim() &&
+      !isLoopbackAgentUrl(body.GLYPH_AGENT_URL)
+    ) {
+      res.status(400).json({
+        error:
+          "GLYPH_AGENT_URL muss lokal sein (http://127.0.0.1, http://localhost oder http://[::1]).",
+      });
+      return;
+    }
     // Optional contextWindow fill for shared primary on save
     if (body.models?.shared?.primary && !body.models.shared.contextWindow) {
       try {
@@ -2063,19 +2401,21 @@ app.put("/api/bindings", async (req, res) => {
     clearApiKeyCache();
 
     let modelsApply = null;
-    const agentUrl =
-      String(
-        process.env.GLYPH_AGENT_URL ||
-          saved.settings?.GLYPH_AGENT_URL ||
-          "",
-      ).trim() || "http://127.0.0.1:18899";
+    const agentUrl = localAgentUrl(saved);
     const plan = buildAgentPush(saved, body);
     if (plan.push) {
-      modelsApply = await pushModelsToAgent(agentUrl, plan.models, {
-        direct: plan.direct,
-        provider: plan.provider,
-        kind: plan.kind,
-      });
+      modelsApply = agentUrl
+        ? await pushModelsToAgent(agentUrl, plan.models, {
+            direct: plan.direct,
+            provider: plan.provider,
+            kind: plan.kind,
+          })
+        : {
+            ok: false,
+            applied: false,
+            error:
+              "GLYPH_AGENT_URL ist nicht lokal — Key-Push verweigert (nur 127.0.0.1/localhost/[::1]).",
+          };
     }
 
     res.json(
@@ -2139,18 +2479,22 @@ async function setLocalProvider(enabled) {
     env: process.env,
   });
   clearApiKeyCache();
-  const agentUrl =
-    String(
-      process.env.GLYPH_AGENT_URL || saved.settings?.GLYPH_AGENT_URL || "",
-    ).trim() || "http://127.0.0.1:18899";
+  const agentUrl = localAgentUrl(saved);
   const plan = buildAgentPush(saved, patch);
   let apply = null;
   if (plan.push) {
-    apply = await pushModelsToAgent(agentUrl, plan.models, {
-      direct: plan.direct,
-      provider: plan.provider,
-      kind: plan.kind,
-    });
+    apply = agentUrl
+      ? await pushModelsToAgent(agentUrl, plan.models, {
+          direct: plan.direct,
+          provider: plan.provider,
+          kind: plan.kind,
+        })
+      : {
+          ok: false,
+          applied: false,
+          error:
+            "GLYPH_AGENT_URL ist nicht lokal — Key-Push verweigert (nur 127.0.0.1/localhost/[::1]).",
+        };
   }
   return { target, apply, saved };
 }
@@ -2236,6 +2580,17 @@ app.get("/api/local/status", async (_req, res) => {
   }
 });
 
+/**
+ * 27B ist Hauptnutzer-Reserve: ein Gast darf das lokale Modell weder wecken
+ * noch schlafen legen (~8 GB RAM auf dem Mac). Die UI zeigt den Schalter
+ * ausgegraut mit Kurzhinweis; hier ist die harte Sperre dahinter.
+ */
+app.use("/api/local", (req, res, next) => {
+  if (!isWebRequest(req)) return next();
+  if (webSessionRole(req) !== "guest") return next();
+  res.status(403).json({ error: "Nur der Hauptnutzer kann den 27B steuern" });
+});
+
 app.post("/api/local/start", async (_req, res) => {
   const st = localStatus();
   if (st.state === "ready") {
@@ -2295,10 +2650,16 @@ app.post("/api/models/apply", async (req, res) => {
     if (body.models) {
       const file = await readBindingsFile(bindingsPath(STATE_DIR));
       const models = body.models;
-      const agentUrl =
-        String(
-          process.env.GLYPH_AGENT_URL || file.settings?.GLYPH_AGENT_URL || "",
-        ).trim() || "http://127.0.0.1:18899";
+      const agentUrl = localAgentUrl(file);
+      if (!agentUrl) {
+        res.status(400).json({
+          ok: false,
+          applied: false,
+          error:
+            "GLYPH_AGENT_URL ist nicht lokal — Key-Push verweigert (nur 127.0.0.1/localhost/[::1]).",
+        });
+        return;
+      }
       const push = await pushModelsToAgent(agentUrl, models);
       res.status(push.ok ? 200 : 502).json(push);
       return;
@@ -2490,7 +2851,7 @@ app.get("/api/context", async (req, res) => {
       try {
         const file = await readBindingsFile(bindingsPath(STATE_DIR));
         const models = file?.models;
-        if (profile === "_code" && models?.code?.primary) {
+        if ((profile === "_tick" || profile === "_code" || profile === "code") && models?.code?.primary) {
           modelHint = String(models.code.primary).trim();
         } else if (models?.shared?.primary) {
           modelHint = String(models.shared.primary).trim();
@@ -2622,11 +2983,18 @@ app.get("/api/sessions/:id/history", async (req, res) => {
       res.status(400).json({ error: "Ungültige Session-ID" });
       return;
     }
-    const histBridge =
-      seats.findBySession(req.params.id) ||
-      (live(req).connected ? live(req) : null);
+    /**
+     * Nur der eigene Sitz darf seinen Verlauf lesen. Vorher suchte die Route
+     * über ALLE Sitze: Adapter vergeben IDs pro Prozess (`glyph-agent-1` …),
+     * deshalb kollidierten zwei Web-Gäste und Gast B konnte A's Chat lesen.
+     */
+    const histBridge = live(req);
     if (!histBridge || !histBridge.connected) {
       res.status(503).json({ error: "Kein aktiver Agent verbunden" });
+      return;
+    }
+    if (histBridge.sessionId !== req.params.id) {
+      res.status(404).json({ error: "Session gehört nicht zu diesem Sitz" });
       return;
     }
     const result = await histBridge.getSessionHistory(req.params.id);
@@ -2727,6 +3095,41 @@ class GrokBridge {
    * Interactive permission for ^_Code (never auto-approve shell/write).
    * Broadcasts to browser; waits for permission_response or timeout/cancel.
    */
+  /**
+   * Payload der offenen Freigabe (oder null). Wird auch beim (Re-)Connect
+   * gesendet, damit ein Reload die wartende Freigabe nicht verliert.
+   */
+  permissionPayload() {
+    const p = this.pendingPermission;
+    if (!p) return null;
+    const toolCall = p.params?.toolCall || {};
+    const options = Array.isArray(p.params?.options) ? p.params.options : [];
+    const raw =
+      toolCall.rawInput && typeof toolCall.rawInput === "object"
+        ? toolCall.rawInput
+        : {};
+    const grant =
+      raw._grant && typeof raw._grant === "object" ? raw._grant : null;
+    return {
+      type: "permission_request",
+      id: p.id,
+      sessionId: p.params?.sessionId || this.sessionId,
+      title: toolCall.title || toolCall.toolCallId || "Aktion freigeben",
+      kind: toolCall.kind || "other",
+      preview: extractPermissionPreview(toolCall),
+      options: options.map((o) => ({
+        optionId: o.optionId,
+        name: o.name || o.optionId,
+        kind: o.kind || "allow_once",
+      })),
+      grant,
+    };
+  }
+
+  /**
+   * Interactive permission for ^_Code (never auto-approve shell/write).
+   * Broadcasts to browser; waits for permission_response or timeout/cancel.
+   */
   askBrowserPermission(params) {
     return new Promise((resolve) => {
       // Cancel any previous waiter
@@ -2742,8 +3145,6 @@ class GrokBridge {
         this.pendingPermission = null;
       }
       const id = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const toolCall = params?.toolCall || {};
-      const options = Array.isArray(params?.options) ? params.options : [];
       const timer = setTimeout(() => {
         if (this.pendingPermission?.id === id) {
           this.pendingPermission = null;
@@ -2752,24 +3153,8 @@ class GrokBridge {
         }
       }, 5 * 60 * 1000);
       this.pendingPermission = { id, resolve, params, timer };
-      const raw = toolCall.rawInput && typeof toolCall.rawInput === "object"
-        ? toolCall.rawInput
-        : {};
-      const grant = raw._grant && typeof raw._grant === "object" ? raw._grant : null;
-      this.broadcast({
-        type: "permission_request",
-        id,
-        sessionId: params?.sessionId || this.sessionId,
-        title: toolCall.title || toolCall.toolCallId || "Aktion freigeben",
-        kind: toolCall.kind || "other",
-        preview: extractPermissionPreview(toolCall),
-        options: options.map((o) => ({
-          optionId: o.optionId,
-          name: o.name || o.optionId,
-          kind: o.kind || "allow_once",
-        })),
-        grant,
-      });
+      const payload = this.permissionPayload();
+      if (payload) this.broadcast(payload);
     });
   }
 
@@ -2899,6 +3284,12 @@ class GrokBridge {
         JSON.stringify(commandsBroadcastPayload(this.availableCommands)),
       );
     }
+    // Offene Freigabe nach Reload/Reconnect erneut vorlegen — der Agent wartet
+    // sonst bis zum 5-Minuten-Timeout ohne Dialog.
+    const pendingPermission = this.permissionPayload();
+    if (pendingPermission) {
+      ws.send(JSON.stringify(pendingPermission));
+    }
   }
 
   removeClient(ws) {
@@ -2965,7 +3356,7 @@ class GrokBridge {
           // ^_Code: Write/Shell immer interaktiv in Glyph bestätigen (nie auto-approve).
           // Grok/Build: always-approve (CLI-Äquivalent --always-approve).
           const profileId = this.agentId;
-          if (profileId === "_code" || profileId === "code") {
+          if (profileId === "_tick" || profileId === "_code" || profileId === "code") {
             return await this.askBrowserPermission(params || {});
           }
           return {
@@ -3029,7 +3420,7 @@ class GrokBridge {
 
       // OpenRouter model hot-apply when Code/Agent connects and bindings differ
       const profileId = this.agentId || this.agentProfile?.()?.id;
-      if (profileId === "_code" || profileId === "glyph-agent") {
+      if (profileId === "_tick" || profileId === "_code" || profileId === "glyph-agent") {
         void syncModelsIfMismatch({
           stateDir: STATE_DIR,
           env: process.env,
@@ -3220,6 +3611,18 @@ class GrokBridge {
       const STEP_END = "⏹STEP⏹";
       const DRAFT_START = "⏺DRAFT⏺";
       const DRAFT_CONT = "⏺DRAFT+⏺";
+      const FILE_MARK = "⏺FILE⏺";
+      if (text.startsWith(FILE_MARK)) {
+        try {
+          const file = JSON.parse(text.slice(FILE_MARK.length));
+          if (file && file.data && file.name) {
+            this.broadcast({ type: "chat_file", file });
+          }
+        } catch {
+          /* unlesbarer Datei-Marker */
+        }
+        return;
+      }
       if (text.startsWith(STEP_START)) {
         this.broadcast({ type: "step_chunk", phase: "start", text: text.slice(STEP_START.length) });
         return;
@@ -3449,6 +3852,7 @@ class GrokBridge {
 
     let stopReason = "end_turn";
     let failed = null;
+    let result = null;
     try {
       const glyph = {};
       const isAgent =
@@ -3465,7 +3869,7 @@ class GrokBridge {
         }
       }
       if (opts.swarm === true) glyph.swarm = true;
-      const result = await this.connection.agent.request(
+      result = await this.connection.agent.request(
         acp.methods.agent.session.prompt,
         {
           sessionId: this.sessionId,
@@ -3493,9 +3897,20 @@ class GrokBridge {
       stopReason = resolveCancelStopReason(this.cancelling, stopReason);
       this.endCancelState(stopReason);
       this.busy = false;
+      const turnUsage = result?.usage;
+      const totalTokens = Number(turnUsage?.totalTokens);
       this.broadcast({
         type: "turn_done",
         stopReason,
+        ...(Number.isFinite(totalTokens) && totalTokens > 0
+          ? {
+              usage: {
+                totalTokens,
+                inputTokens: Number(turnUsage.inputTokens) || 0,
+                outputTokens: Number(turnUsage.outputTokens) || 0,
+              },
+            }
+          : {}),
       });
       this.broadcast(this.statusPayload({ busy: false, cancelling: false }));
     }
@@ -3938,9 +4353,10 @@ class GrokBridge {
 seats = new SeatHub((seat) => new GrokBridge({ seat }));
 
 wss.on("connection", (ws, req) => {
+  const webConn = isWebRequest(req);
   let seat = "desk";
   try {
-    if (isWebRequest(req)) {
+    if (webConn) {
       seat = webSeatKey(webSessionToken(req));
     } else {
       const host = req?.headers?.host || `127.0.0.1:${PORT}`;
@@ -3964,6 +4380,16 @@ wss.on("connection", (ws, req) => {
   b.addClient(ws);
 
   ws.on("message", async (raw) => {
+    // Web-Sitzungen können ablaufen oder per Passwortwechsel widerrufen werden,
+    // ohne dass der Socket schließt. Deshalb vor jeder Nachricht neu prüfen.
+    if (webConn && !hasWebSession(req)) {
+      try {
+        ws.close(4401, "web session expired");
+      } catch {
+        /* schon zu */
+      }
+      return;
+    }
     let msg;
     try {
       msg = JSON.parse(String(raw));
@@ -4037,7 +4463,8 @@ app.use(express.static(path.join(ROOT, "client/dist"), { index: false }));
 app.use("/docs", express.static(path.join(ROOT, "docs"), { index: false }));
 // SPA fallback for client-side routes (GET only)
 app.get(/.*/, (req, res, next) => {
-  if (req.path.startsWith("/api") || req.path.startsWith("/ws")) return next();
+  const p = normalizeRequestPath(req.path);
+  if (p.startsWith("/api") || p.startsWith("/ws")) return next();
   sendIndexHtml(req, res).catch((err) => next(err));
 });
 
@@ -4052,6 +4479,9 @@ httpServer.on("error", (err) => {
   console.error("HTTP server error:", err);
   process.exit(1);
 });
+
+// Adoption + Auto-Schlafen/Speicher-Bremse für das lokale Modell.
+startLocalModelTicker();
 
 httpServer.listen(PORT, HOST, () => {
   console.log(

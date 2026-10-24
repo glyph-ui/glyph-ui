@@ -17,10 +17,10 @@ export const FRAME_PAD = 80;
 export const PHONE_PAD = 48;
 export const HEAD_IDS = ["grok", "agent", "code"];
 
-/** UI profile id (`grok` / `glyph-agent` / `_code`) → graph head id. */
+/** UI profile id (`grok` / `glyph-agent` / `_tick`) → graph head id. */
 export function profileHeadId(profileId) {
   const id = String(profileId || "");
-  if (id === "_code" || id === "code") return "code";
+  if (id === "_tick" || id === "tick" || id === "_code" || id === "code") return "code";
   if (id === "glyph-agent" || id === "agent") return "agent";
   if (id === "grok") return "grok";
   return "";
@@ -264,7 +264,7 @@ function baseNodes({
   const code = {
     id: "code",
     kind: "profile",
-    label: "^_Code",
+    label: "^_tick",
     cluster: "code",
     face: "code",
     ...(compact ? compactHeadPoint("code") : onRing(RING_HEAD, 0)),

@@ -1,10 +1,11 @@
 /**
- * Composer actions: Chat / Deep Search / Fork / Swarm (TUI-aligned).
+ * Composer actions: Chat or Search / Deep Search / Fork / Swarm (TUI-aligned).
+ * °_Agent shows the base mode as Search. The wire action stays "chat".
  * Copyright (c) 2026 Alexander Hubert — MIT License
  */
 
 /** Graph-Köpfe, die Swarm verarbeiten (nicht Grok — der hat Deep Search). */
-export const SWARM_HEAD_IDS = ["glyph-agent", "_code"];
+export const SWARM_HEAD_IDS = ["glyph-agent", "_tick", "_code"];
 
 /**
  * @param {string | null | undefined} agentId
@@ -14,13 +15,15 @@ export function canSwarm(agentId) {
   return (
     id === "glyph-agent" ||
     id === "agent" ||
+    id === "_tick" ||
+    id === "tick" ||
     id === "_code" ||
     id === "code"
   );
 }
 
-/** Graph-Köpfe, die Fork verarbeiten (^_Code, Grok Build — nicht °_Agent). */
-export const FORK_HEAD_IDS = ["_code", "code", "grok"];
+/** Graph-Köpfe, die Fork verarbeiten (^_tick, Grok Build — nicht °_Agent). */
+export const FORK_HEAD_IDS = ["_tick", "tick", "_code", "code", "grok"];
 
 /**
  * Fork im °_Agent gesperrt: Dort gibt es keine Session-Übersicht
@@ -34,25 +37,62 @@ export function canFork(agentId) {
 }
 
 /**
- * @param {string | null | undefined} action
+ * °_Agent heads. The base composer mode is labeled Search there.
+ * @param {string | null | undefined} agentId
  */
-export function composerActionLabel(action) {
+export function isAgentHead(agentId) {
+  const id = String(agentId || "");
+  return id === "glyph-agent" || id === "agent";
+}
+
+/**
+ * Visible label. Pass agentId so °_Agent's base mode reads Search.
+ * Grok and ^_Code keep Chat. The stored id stays "chat" either way.
+ * @param {string | null | undefined} action
+ * @param {string | null | undefined} [agentId]
+ */
+export function composerActionLabel(action, agentId) {
   if (action === "deep-search") return "Deep Search";
   if (action === "fork") return "Fork";
   if (action === "swarm") return "Swarm";
-  return "Chat";
+  if (action === "vault") return "Vault";
+  return isAgentHead(agentId) ? "Search" : "Chat";
+}
+
+/**
+ * Sichtbare Sendemodi. Gesperrte Einträge fehlen, statt durchgestrichen zu stehen.
+ * Vault nur bei °_Agent.
+ *
+ * @param {string | null | undefined} agentId
+ * @param {{ deepSearch?: boolean, swarm?: boolean } | null | undefined} [caps]
+ * @returns {{ id: string, label: string }[]}
+ */
+export function composerModeOptions(agentId, caps) {
+  const id = String(agentId || "");
+  const deep = caps ? Boolean(caps.deepSearch) : id === "grok" || id === "";
+  const swarm = caps ? Boolean(caps.swarm) : canSwarm(id);
+  const vault = isAgentHead(id);
+  /** @type {{ id: string, label: string }[]} */
+  const out = [{ id: "chat", label: vault ? "Search" : "Chat" }];
+  if (deep) out.push({ id: "deep-search", label: "Deep Search" });
+  if (canFork(id)) out.push({ id: "fork", label: "Fork" });
+  if (vault) out.push({ id: "vault", label: "Vault" });
+  if (swarm) out.push({ id: "swarm", label: "Swarm" });
+  return out;
 }
 
 /**
  * Map composer mode + typed text onto a wire action.
- * Slash `/fork`, `/deep-research`, `/swarm` in Chat mode become the real actions
+ * Slash `/fork`, `/deep-research`, `/swarm` in the base mode become the real actions
  * (insert-only popup still types the command; send must not treat it as chat).
+ * The base mode id is "chat" on every head. °_Agent only relabels it Search.
  *
- * @param {string} sendAction  chat | deep-search | fork | swarm
+ * @param {string} sendAction  chat | deep-search | fork | swarm | vault
  * @param {string} text
- * @returns {{ action: "chat" | "deep-search" | "fork" | "swarm", text: string }}
+ * @returns {{ action: "chat" | "deep-search" | "fork" | "swarm", text: string, vaultSearch?: boolean }}
  */
 export function resolveComposerAction(sendAction, text) {
+  const vaultMode = sendAction === "vault";
   const mode =
     sendAction === "deep-search" ||
     sendAction === "fork" ||
@@ -89,6 +129,7 @@ export function resolveComposerAction(sendAction, text) {
   if (swarm) {
     return { action: "swarm", text: String(swarm[1] || "").trim() };
   }
+  if (vaultMode) return { action: "chat", text: trimmed, vaultSearch: true };
   return { action: "chat", text: trimmed };
 }
 

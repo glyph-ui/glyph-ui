@@ -93,7 +93,7 @@ export function applyLiveStatus(apply) {
 
 /** °_Agent / ^_Code store models in bindings; Grok is CLI. */
 export function isCloudModelProfile(profileId) {
-  return profileId === "_code" || profileId === "glyph-agent";
+  return profileId === "_tick" || profileId === "_code" || profileId === "glyph-agent";
 }
 
 /**
@@ -107,7 +107,8 @@ export function modelHudFromBindings(data = {}, profileId = "") {
   const active = data.modelsActive?.active || data.modelsActive?.shared;
   const desired = data.models?.shared;
   const code = data.modelsActive?.code || data.models?.code;
-  const useCode = profileId === "_code" && Boolean(code?.primary);
+  const useCode =
+    (profileId === "_tick" || profileId === "_code") && Boolean(code?.primary);
   const primary = useCode
     ? code.primary
     : active?.primary ||

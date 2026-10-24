@@ -8,12 +8,17 @@ import {
   agentAllowedOnSeat,
   defaultAgentIdForSeat,
   extraWebHosts,
+  grantWebAccess,
   isWebAdminApi,
   isWebGateExempt,
   isWebHostname,
   isWebOrigin,
   normalizeHostname,
+  normalizeRequestPath,
   parseCookie,
+  publicWebAccess,
+  sessionTtlS,
+  WEB_SESSION_TTL_S,
   validateNewWebPassword,
   parseStoredWebSessions,
   serializeWebSessions,
@@ -23,6 +28,73 @@ import {
   isWebSurfaceHost,
   surfaceHeaderControls,
 } from "../../client/src/utils/webSurface.js";
+
+describe("grantWebAccess", () => {
+  it("opens the door from the password and does not credit a pack", () => {
+    const got = grantWebAccess({ source: "password", packTokens: 512000 });
+    assert.equal(got.ok, true);
+    assert.deepEqual(got.access, {
+      source: "password",
+      role: "owner",
+      opened: true,
+      packTokens: 0,
+      consumed: 0,
+    });
+  });
+
+  it("gives a guest the guest role, not owner", () => {
+    const got = grantWebAccess({ source: "password", role: "guest" });
+    assert.equal(got.ok, true);
+    assert.equal(got.access.role, "guest");
+    // Ein Gast öffnet die Tür genauso — die Rolle entscheidet über Rechte.
+    assert.equal(got.access.opened, true);
+    assert.equal(publicWebAccess(got.access).role, "guest");
+  });
+
+  it("gives guests a 30-minute session, owners 30 days", () => {
+    const now = 1_800_000_000_000;
+    const ttlGuest = sessionTtlS({ role: "guest" });
+    const ttlOwner = sessionTtlS({ role: "owner" });
+    assert.equal(ttlGuest, 1800);
+    assert.equal(ttlOwner, WEB_SESSION_TTL_S);
+
+    const rows = {
+      tokens: [
+        { token: "gast31", iat: now - 31 * 60 * 1000, access: { source: "password", role: "guest" } },
+        { token: "gast29", iat: now - 29 * 60 * 1000, access: { source: "password", role: "guest" } },
+        { token: "chef", iat: now - 29 * 60 * 1000, access: { source: "password", role: "owner" } },
+        { token: "alt", iat: now - 40 * 24 * 3600 * 1000, access: { source: "password", role: "owner" } },
+      ],
+    };
+    const kept = parseStoredWebSessions(rows, now).map((r) => r.token);
+    assert.deepEqual(kept.sort(), ["chef", "gast29"]);
+  });
+
+  it("defaults to owner when no role is given", () => {
+    assert.equal(grantWebAccess({ source: "password" }).access.role, "owner");
+    assert.equal(grantWebAccess({ source: "aufladen" }).access.role, "owner");
+  });
+
+  it("opens the door from a top-up and credits the pack", () => {
+    const got = grantWebAccess({ source: "aufladen" });
+    assert.equal(got.ok, true);
+    assert.equal(got.access.opened, true);
+    assert.equal(got.access.source, "aufladen");
+    assert.equal(got.access.packTokens, 512000);
+    assert.equal(got.access.consumed, 0);
+  });
+
+  it("keeps an explicit paid pack size", () => {
+    const got = grantWebAccess({ source: "aufladen", packTokens: 256000 });
+    assert.equal(got.access.packTokens, 256000);
+  });
+
+  it("rejects an unknown source", () => {
+    const got = grantWebAccess({ source: "coupon" });
+    assert.equal(got.ok, false);
+    assert.equal(got.access, undefined);
+  });
+});
 
 describe("isWebHostname", () => {
   it("allows the public domain exactly", () => {
@@ -86,6 +158,16 @@ describe("gate helpers", () => {
     assert.equal(isWebAdminApi("/api/web-gate/password"), false);
   });
 
+  it("ist unabhängig von Groß-/Kleinschreibung, Slashes und Kodierung", () => {
+    // Express routet case-insensitiv ohne Strict-Slashes — die Sperre muss
+    // dieselbe Sicht haben, sonst ist /API/sessions ein Bypass.
+    assert.equal(isWebAdminApi("/API/sessions"), true);
+    assert.equal(isWebAdminApi("/Api/Bindings/"), true);
+    assert.equal(isWebAdminApi("/%61pi/sessions"), true);
+    assert.equal(isWebAdminApi("//api//sessions//"), true);
+    assert.equal(normalizeRequestPath("/API/Sessions/"), "/api/sessions");
+  });
+
   it("exempts only the gate endpoint among APIs", () => {
     assert.equal(isWebGateExempt({ method: "GET", path: "/api/web-gate" }), true);
     assert.equal(isWebGateExempt({ method: "POST", path: "/api/web-gate" }), true);
@@ -94,6 +176,12 @@ describe("gate helpers", () => {
     assert.equal(isWebGateExempt({ method: "GET", path: "/docs/adr/0001.md" }), false);
     assert.equal(isWebGateExempt({ method: "GET", path: "/" }), true);
     assert.equal(isWebGateExempt({ method: "GET", path: "/assets/x.js" }), true);
+    // Kein Schlupfloch über Schreibweise/Slashes/Encoding.
+    assert.equal(isWebGateExempt({ method: "GET", path: "/API/health" }), false);
+    assert.equal(isWebGateExempt({ method: "GET", path: "/api//health/" }), false);
+    assert.equal(isWebGateExempt({ method: "GET", path: "/%61pi/health" }), false);
+    // Express trifft auch /API/web-gate → das Login-Ziel bleibt exempt.
+    assert.equal(isWebGateExempt({ method: "POST", path: "/API/web-gate" }), true);
   });
 });
 
@@ -115,13 +203,21 @@ describe("surfaceHeaderControls", () => {
 });
 
 describe("validateNewWebPassword", () => {
-  it("requires 8–200 chars, not equal to current", () => {
-    assert.equal(validateNewWebPassword("short").ok, false);
+  it("requires 4–200 chars, not equal to current", () => {
+    // Mindestlänge 4: absichtlich niedrig, keine Zeichenklassen-Regeln.
+    assert.equal(validateNewWebPassword("abc").ok, false);
+    assert.equal(validateNewWebPassword("abcd").ok, true);
     assert.equal(validateNewWebPassword("sameword", "sameword").ok, false);
     assert.equal(validateNewWebPassword("  padded1").ok, false);
     const ok = validateNewWebPassword("new-secret", "old-secret");
     assert.equal(ok.ok, true);
     assert.equal(ok.password, "new-secret");
+  });
+
+  it("accepts any mix of letters, digits and symbols", () => {
+    for (const pw of ["1234", "abcd", "!!!!", "a1!b", "ßßßß"]) {
+      assert.equal(validateNewWebPassword(pw).ok, true, pw);
+    }
   });
 });
 
@@ -164,5 +260,25 @@ describe("web session persistence", () => {
     const entries = [{ token: "abc", iat: 42 }];
     const parsed = JSON.parse(serializeWebSessions(entries));
     assert.deepEqual(parsed.tokens, entries);
+  });
+
+  it("keeps a payment grant and leaves an old password row unchanged", () => {
+    const now = 1_800_000_000_000;
+    const paid = grantWebAccess({ source: "aufladen", packTokens: 512000 }).access;
+    const got = parseStoredWebSessions(
+      {
+        tokens: [
+          { token: "paid", iat: now - 1000, access: { ...paid, consumed: 12 } },
+          { token: "old", iat: now - 2000 },
+        ],
+      },
+      now,
+    );
+    assert.deepEqual(got[0], {
+      token: "paid",
+      iat: now - 1000,
+      access: { ...paid, consumed: 12 },
+    });
+    assert.deepEqual(got[1], { token: "old", iat: now - 2000 });
   });
 });

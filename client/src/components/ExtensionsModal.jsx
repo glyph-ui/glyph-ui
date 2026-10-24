@@ -4,7 +4,12 @@
  * SPDX-License-Identifier: MIT
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { rankCatalog, slashItemLabel, withoutHiddenAgentCommands } from "../utils/slash.js";
+import {
+  isInternalOpsCommand,
+  rankCatalog,
+  slashItemLabel,
+  withoutHiddenAgentCommands,
+} from "../utils/slash.js";
 import { scrollChildIntoView } from "../utils/scrollChild.js";
 import { SideDrawer } from "./SideDrawer.jsx";
 
@@ -26,7 +31,7 @@ function badgeMeta(item) {
  * @param {() => void} props.onClose
  * @param {Array<{ name: string, description?: string, inputHint?: string, kind?: string, source?: string }>} props.skills
  * @param {Array<{ name: string, description?: string, inputHint?: string }>} props.agentCommands
- * @param {string} [props.profileLabel]
+ * @param {string | null} [props.intro]  fester Erklärungstext über der Liste
  * @param {string | null} [props.skillsHint]
  * @param {boolean} [props.loading]
  * @param {string} [props.error]
@@ -40,7 +45,6 @@ function ExtensionsModal({
   onClose,
   skills = [],
   agentCommands = [],
-  profileLabel = "",
   skillsHint = null,
   loading = false,
   error = "",
@@ -48,6 +52,8 @@ function ExtensionsModal({
   initialQuery = "",
   side = "right",
   mode = "overlay",
+  internalHidden = false,
+  intro = null,
 }) {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -58,11 +64,12 @@ function ExtensionsModal({
 
   const skillItems = useMemo(
     () =>
-      (skills || []).map((s) => ({
-        ...s,
-        kind: "skill",
-        name: String(s.name || "").replace(/^\//, ""),
-      })),
+      (skills || [])
+        .map((s) => ({
+          ...s,
+          kind: "skill",
+          name: String(s.name || "").replace(/^\//, ""),
+        })),
     [skills],
   );
 
@@ -74,13 +81,20 @@ function ExtensionsModal({
           kind: c.kind === "ui" ? "ui" : "command",
           name: String(c.name || "").replace(/^\//, ""),
         })),
-      ).filter((c) => c.kind !== "ui" && c.action !== "reload"),
-    [agentCommands],
+      ).filter(
+        (c) =>
+          c.kind !== "ui" &&
+          c.action !== "reload" &&
+          (!internalHidden || !isInternalOpsCommand(c.name)),
+      ),
+    [agentCommands, internalHidden],
   );
 
+  // „/“ ist der gewohnte Auslöser — als Filter-Eingabe soll es nichts wegfiltern.
+  const normQuery = query.replace(/^[/\s]+/, "");
   const items = useMemo(
-    () => rankCatalog(skillItems, commandItems, query),
-    [skillItems, commandItems, query],
+    () => rankCatalog(skillItems, commandItems, normQuery),
+    [skillItems, commandItems, normQuery],
   );
 
   const filterEmpty = Boolean(query.trim()) && items.length === 0 && !loading;
@@ -90,7 +104,7 @@ function ExtensionsModal({
       openedRef.current = false;
       return;
     }
-    setQuery(String(initialQuery || ""));
+    setQuery(String(initialQuery || "").replace(/^[/\s]+/, ""));
     setSelectedIndex(0);
     openedRef.current = true;
     requestAnimationFrame(() => {
@@ -149,9 +163,8 @@ function ExtensionsModal({
       mode={mode}
       meta={
         <>
-          {profileLabel ? `Profil: ${profileLabel} · ` : ""}
-          Auswahl fügt <code>/name</code> in den Composer ein — sendet nicht.
-          Panel bleibt offen; Esc oder „Einfügen &amp; zu“ schließt.
+          Auswahl setzt <code>/name</code> ins Eingabefeld — gesendet wird erst
+          dort.
         </>
       }
       headExtra={
@@ -166,10 +179,11 @@ function ExtensionsModal({
         </button>
       }
     >
+      {intro ? <p className="overview-hint app-drawer-hint">{intro}</p> : null}
       <p className="overview-hint app-drawer-hint">
-        Filtern · <kbd>↑</kbd>/<kbd>↓</kbd> + <kbd>Enter</kbd> fügt ein (bleibt
-        offen) · <kbd>Esc</kbd> / Schließen · <kbd>/</kbd> im Composer öffnet
-        dasselbe Panel. UI-Bedienung: <strong>Buch → Legende</strong> (Seitenpanel).
+        <kbd>↑</kbd> <kbd>↓</kbd> wählen · <kbd>Enter</kbd> einfügen ·{" "}
+        <kbd>Esc</kbd> schließen · <kbd>/</kbd> öffnet dieses Panel auch im
+        Eingabefeld
       </p>
 
       <div className="extensions-search-row">
@@ -177,7 +191,7 @@ function ExtensionsModal({
           ref={searchRef}
           className="overview-search"
           type="search"
-          placeholder="Skills und Agent-Commands filtern…"
+          placeholder="Befehl oder Skill suchen …"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           aria-label="Befehle und Skills filtern"
@@ -200,9 +214,6 @@ function ExtensionsModal({
             }
           }}
         />
-        <span className="extensions-filter-hint" title="Filterfeld (Fokus hier)">
-          Filter
-        </span>
       </div>
 
       {error ? <p className="overview-hint overview-hint--error">{error}</p> : null}
@@ -303,7 +314,7 @@ function ExtensionsModal({
                   aria-label={`${slashItemLabel(item)} einfügen und schließen`}
                   onClick={() => pick(item, { close: true })}
                 >
-                  zu
+                  Einfügen
                 </button>
               </div>
             );

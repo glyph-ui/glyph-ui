@@ -93,7 +93,15 @@ const CFG = {
   maxRuntimeMs: num(process.env.GLYPH_LOCAL_MAX_RUNTIME_MS, 3 * 60 * 60 * 1000),
   cooldownMs: num(process.env.GLYPH_LOCAL_COOLDOWN_MS, 30 * 1000),
   startTimeoutMs: num(process.env.GLYPH_LOCAL_START_TIMEOUT_MS, 120 * 1000),
-  tickMs: num(process.env.GLYPH_LOCAL_TICK_MS, 30 * 1000),
+  tickMs: num(process.env.GLYPH_LOCAL_TICK_MS, 15 * 1000),
+  // Speicher-Bremse: unter diesem Wert (MB, verfügbar ohne Auslagern) wird das
+  // Modell schlafen gelegt, BEVOR macOS anfängt zu schaufeln. Genau das hat den
+  // Rechner eingefroren — bei 16,7 GB belegtem Swap wartete alles auf Platte,
+  // bis die Modellantwort fertig war. 0 schaltet die Bremse ab.
+  minFreeMb: num(process.env.GLYPH_LOCAL_MIN_FREE_MB, 1200),
+  // Nur bremsen, wenn seit dieser Zeit keine Anfrage mehr lief — sonst würde
+  // die Bremse eine laufende Antwort abschneiden.
+  memQuietMs: num(process.env.GLYPH_LOCAL_MEM_QUIET_MS, 90 * 1000),
 };
 
 /** @type {"sleeping"|"starting"|"ready"|"error"} */
@@ -104,8 +112,14 @@ let startedAt = 0;
 let lastActivity = 0;
 let lastStartAt = 0;
 let lastError = "";
+/** Grund des letzten automatischen Schlafens (idle | max-runtime | memory). */
+let lastStopReason = "";
 let counter = null;
 let metricsSeen = false;
+/** Aufeinanderfolgende Ticks unter der Speicherschwelle (Entprellung). */
+let memLowSamples = 0;
+/** Zuletzt gemessener verfügbarer Speicher in MB (null = nicht messbar). */
+let lastAvailMb = null;
 let startPromise = null;
 let ticking = false;
 /** Aufeinanderfolgende fehlgeschlagene Gesundheitsprüfungen im Zustand ready. */
@@ -127,6 +141,85 @@ function readPid() {
   } catch {
     return null;
   }
+}
+
+/**
+ * Port des lokalen Modells aus `localBaseUrl()` (z. B. 8080).
+ */
+function localPort() {
+  const m = localBaseUrl().match(/:([0-9]+)/);
+  return m ? Number(m[1]) : 8080;
+}
+
+/**
+ * PID des Prozesses, der auf dem Modellport lauscht.
+ *
+ * Warum zusätzlich zur PID-Datei: wer den Server von Hand startet
+ * (`./bonsai-server`), schreibt keine PID-Datei. Die Brücke adoptierte ihn
+ * dann zwar (der Port antwortet ja), hatte aber `pid: 0` — sie konnte ihn
+ * weder überwachen noch schlafen legen, und er lief als Waise weiter, bis der
+ * Speicher ausging. Über `lsof` bekommen wir die PID auch ohne Datei.
+ *
+ * @returns {Promise<number>} PID oder 0.
+ */
+function findPidOnPort() {
+  return new Promise((resolve) => {
+    let proc;
+    try {
+      proc = spawn("/usr/sbin/lsof", ["-ti", `:${localPort()}`, "-sTCP:LISTEN"], {
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+    } catch {
+      resolve(0);
+      return;
+    }
+    let out = "";
+    proc.stdout.on("data", (d) => {
+      out += String(d);
+    });
+    proc.on("error", () => resolve(0));
+    proc.on("close", () => {
+      const pid = Number(out.trim().split("\n")[0]);
+      resolve(Number.isFinite(pid) && pid > 0 ? pid : 0);
+    });
+  });
+}
+
+/**
+ * Echte Startzeit eines Prozesses (ms). Nötig für adoptierte Modelle, die von
+ * Hand gestartet wurden: sonst würde `maxRuntime` bei jedem Bridge-Neustart
+ * wieder bei null beginnen und das Modell liefe unbegrenzt weiter.
+ *
+ * @param {number} pid
+ * @returns {Promise<number>} ms oder 0, wenn nicht lesbar.
+ */
+function readProcessStartMs(pid) {
+  return new Promise((resolve) => {
+    if (!pid) {
+      resolve(0);
+      return;
+    }
+    let proc;
+    try {
+      proc = spawn("/bin/ps", ["-p", String(pid), "-o", "lstart="], {
+        // LC_ALL=C erzwingt das parsebare Format "Thu Oct 22 19:47:30 2026".
+        env: { ...process.env, LC_ALL: "C" },
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+    } catch {
+      resolve(0);
+      return;
+    }
+    let out = "";
+    proc.stdout.on("data", (d) => {
+      out += String(d);
+    });
+    proc.on("error", () => resolve(0));
+    proc.on("close", () => {
+      const t = Date.parse(out.trim());
+      resolve(Number.isFinite(t) ? t : 0);
+    });
+  });
 }
 
 function writePid(pid) {
@@ -205,7 +298,16 @@ export function localStatus() {
     idleTimeoutMs: CFG.idleMs,
     maxRuntimeMs: CFG.maxRuntimeMs,
     cooldownMs: CFG.cooldownMs,
+    minFreeMb: CFG.minFreeMb,
+    memoryBrake:
+      CFG.minFreeMb <= 0
+        ? "off"
+        : lastAvailMb === null
+          ? "unavailable"
+          : "on",
+    availableMb: lastAvailMb,
     metrics: metricsSeen,
+    lastStopReason,
     lastError,
     updatedAt: now(),
   };
@@ -255,10 +357,21 @@ export async function localStart(opts = {}) {
     // Schon jemand da? (z. B. von Hand gestartet)
     if (await localHealthy()) {
       state = "ready";
-      startedAt = startedAt || now();
       lastActivity = now();
       const p = readPid();
-      if (p) adoptedPid = p.pid;
+      if (p) {
+        adoptedPid = p.pid;
+        startedAt = p.startedAt || startedAt;
+      } else {
+        // Von Hand gestartet: keine PID-Datei. Dann über den Port holen —
+        // sonst bleibt `pid: 0` und die Brücke kann das Modell nie beenden.
+        adoptedPid = await findPidOnPort();
+        // Echte Startzeit übernehmen, damit maxRuntime nicht neu beginnt.
+        startedAt = (await readProcessStartMs(adoptedPid)) || now();
+        // PID-Datei nachziehen: nächster Bridge-Neustart kennt den Prozess.
+        if (adoptedPid) writePid(adoptedPid);
+      }
+      startedAt = startedAt || now();
       ensureTicker();
       return { ok: true, adopted: true, ...localStatus() };
     }
@@ -300,19 +413,40 @@ export async function localStart(opts = {}) {
       }
     }
 
-    const pid = child?.pid || 0;
+    const proc = child;
+    const pid = proc?.pid || 0;
     adoptedPid = pid;
     startedAt = now();
-    writePid(pid);
+    if (pid) writePid(pid);
 
-    child.once("exit", (code, signal) => {
-      child = null;
+    /**
+     * spawn-Fehler (ENOENT, EACCES, EAGAIN) kommen als Event, nicht als
+     * Exception — ohne Listener würde Node hier mit einem Uncaught Exception
+     * beenden. `_glyphStopping` markiert unser eigenes SIGTERM, damit ein
+     * gewolltes Schlafen nicht als Absturz gemeldet wird.
+     */
+    proc.on("error", (err) => {
+      if (child === proc) child = null;
+      if (proc._glyphStopping) return;
+      state = "error";
+      startedAt = 0;
+      lastActivity = 0;
+      counter = null;
+      clearPid();
+      lastError = `Modellprozess: ${err.message}`;
+      lastExitHint = lastError;
+    });
+
+    proc.once("exit", (code, signal) => {
+      if (child === proc) child = null;
+      clearPid();
+      // Gewolltes Schlafen (localStop / Start-Timeout): kein Absturz.
+      if (proc._glyphStopping) return;
       if (state === "ready" || state === "starting") {
         state = "sleeping";
         startedAt = 0;
         lastActivity = 0;
         counter = null;
-        clearPid();
         if (signal) {
           // Von aussen beendet — auf einem 16-GB-Mac fast immer Speichermangel
           // (z. B. ein zweites Modell parallel in Ollama).
@@ -333,6 +467,10 @@ export async function localStart(opts = {}) {
     // Auf /health warten.
     const deadline = now() + CFG.startTimeoutMs;
     while (now() < deadline) {
+      // Der error-Handler kann den Start vorzeitig beenden (z. B. EACCES).
+      if (state === "error") {
+        return { ok: false, error: lastError, ...localStatus() };
+      }
       if (await localHealthy()) {
         state = "ready";
         lastActivity = now();
@@ -346,6 +484,21 @@ export async function localStart(opts = {}) {
     lastError = `Zeitüberschreitung nach ${Math.round(
       CFG.startTimeoutMs / 1000,
     )}s — siehe ${logPath()}`;
+    // Kein Waisenprozess zurücklassen: ein hängender 27B hielte sonst ~8 GB,
+    // während die UI „Zeitüberschreitung“ zeigt.
+    if (proc) {
+      proc._glyphStopping = true;
+      try {
+        proc.kill("SIGTERM");
+      } catch {
+        /* schon weg */
+      }
+    }
+    adoptedPid = 0;
+    startedAt = 0;
+    lastActivity = 0;
+    counter = null;
+    clearPid();
     return { ok: false, error: lastError, ...localStatus() };
   })();
 
@@ -367,11 +520,18 @@ export async function localStop(opts = {}) {
     startedAt = 0;
     lastActivity = 0;
     counter = null;
+    memLowSamples = 0;
     clearPid();
+    lastError = "";
+    lastExitHint = "";
+    lastStopReason = opts.reason || "no-pid";
     return { ok: true, alreadyAsleep: true, ...localStatus() };
   }
 
   const proc = child;
+  // Eigenes SIGTERM markieren — der exit-Handler darf daraus keinen Absturz
+  // machen (sonst stand nach normalem Schlafen „vermutlich Speichermangel“).
+  if (proc) proc._glyphStopping = true;
   try {
     process.kill(pid, "SIGTERM");
   } catch {
@@ -393,7 +553,15 @@ export async function localStop(opts = {}) {
   startedAt = 0;
   lastActivity = 0;
   counter = null;
+  memLowSamples = 0;
+  lastAvailMb = null;
   clearPid();
+  // Ein gewolltes Schlafen ist kein Fehler: alte Absturz-Hinweise verwerfen.
+  lastError = "";
+  lastExitHint = "";
+  // Grund IMMER festhalten — vorher setzte ihn nur die Speicher-Bremse, und ein
+  // automatisches Schlafen war im Status nicht von einem Absturz zu trennen.
+  lastStopReason = opts.reason || "manual";
   return { ok: true, stopped: true, reason: opts.reason || "manual", ...localStatus() };
 }
 
@@ -417,10 +585,17 @@ export async function localTick() {
   try {
     if (state !== "ready") {
       // Nach einem Glyph-Neustart: laufenden Prozess adoptieren.
-      const p = readPid();
-      if (p && (await localHealthy())) {
-        adoptedPid = p.pid;
-        startedAt = p.startedAt || now();
+      // Nur ein Health-Check — zweimal hintereinander kostete bis zu 5 s.
+      if (await localHealthy()) {
+        const p = readPid();
+        adoptedPid = p ? p.pid : await findPidOnPort();
+        if (adoptedPid) {
+          startedAt = p?.startedAt || (await readProcessStartMs(adoptedPid)) || now();
+          // PID-Datei nachziehen, damit der nächste Neustart die Startzeit kennt.
+          writePid(adoptedPid);
+        } else {
+          startedAt = now();
+        }
         lastActivity = now();
         state = "ready";
         counter = await readCounter();
@@ -451,11 +626,60 @@ export async function localTick() {
     healthMisses = 0;
     lastExitHint = "";
 
+    /**
+     * SPEICHER-BREMSE.
+     *
+     * Warum: auf 16 GB reicht der Platz für Modell (4 GB resident) plus
+     * Browser/Editor/andere Apps nicht. Sobald macOS auszulagern beginnt,
+     * steht der ganze Rechner — gemessen wurden 16,7 GB belegter Swap und
+     * 11,3 Mio. Swapouts. Der Rechner reagierte erst wieder, als die
+     * Modellantwort fertig war.
+     *
+     * Deshalb: fällt der verfügbare Speicher unter die Schwelle UND läuft
+     * gerade keine Anfrage (memQuietMs), legen wir das Modell schlafen. Der
+     * Auto-Rückfall der Brücke schaltet dann auf die Cloud — der Nutzer merkt
+     * es an der Quelle, nicht an einem eingefrorenen Rechner.
+     *
+     * Entprellung: Zwei Ticks in Folge unter der Schwelle. Ohne `--metrics`
+     * kennt die Brücke keine laufende Anfrage (lastActivity bleibt stehen) —
+     * dann verhindert die Entprellung, dass eine einzelne Messung mitten in
+     * einer langen Antwort zuschlägt.
+     */
+    if (CFG.minFreeMb > 0) {
+      const availMb = await readAvailableMb();
+      lastAvailMb = availMb;
+      const quiet = !lastActivity || now() - lastActivity >= CFG.memQuietMs;
+      if (availMb !== null && availMb < CFG.minFreeMb && quiet) {
+        memLowSamples += 1;
+        // Mit Metriken ist die Aktivität bekannt → sofort bremsen. Ohne
+        // Metriken erst nach zwei Messungen (Schutz vor laufender Antwort).
+        if (memLowSamples >= (metricsSeen ? 1 : 2)) {
+          lastStopReason = `Speicher knapp (${availMb} MB verfügbar)`;
+          await localStop({ reason: "memory" });
+          return localStatus();
+        }
+      } else {
+        memLowSamples = 0;
+      }
+    } else {
+      lastAvailMb = null;
+      memLowSamples = 0;
+    }
+
+    /**
+     * Nur selbst gestartete Modelle werden automatisch schlafen gelegt.
+     * Ein adoptierter (von Hand gestarteter) Prozess gehört dem Nutzer —
+     * Idle-/Max-Runtime-Bremse würden ihn sonst hinter seinem Rücken beenden.
+     * Die Speicher-Bremse oben bleibt für beide aktiv: sie verhindert das
+     * Einfrieren des Rechners und ist damit Sicherheit, keine Bequemlichkeit.
+     */
+    const owned = Boolean(child);
+
     const c = await readCounter();
     if (c === null) {
       // Keine Metriken: Aktivität unbekannt → nur die Notbremse greift.
       metricsSeen = false;
-      if (startedAt && now() - startedAt > CFG.maxRuntimeMs) {
+      if (owned && startedAt && now() - startedAt > CFG.maxRuntimeMs) {
         await localStop({ reason: "max-runtime" });
       }
       return localStatus();
@@ -465,17 +689,60 @@ export async function localTick() {
       lastActivity = now();
       counter = c;
     }
-    if (now() - lastActivity > CFG.idleMs) {
+    if (owned && now() - lastActivity > CFG.idleMs) {
       await localStop({ reason: "idle" });
       return localStatus();
     }
-    if (startedAt && now() - startedAt > CFG.maxRuntimeMs) {
+    if (owned && startedAt && now() - startedAt > CFG.maxRuntimeMs) {
       await localStop({ reason: "max-runtime" });
     }
     return localStatus();
   } finally {
     ticking = false;
   }
+}
+
+/**
+ * Verfügbarer Speicher in MB: frei + inaktiv + spekulativ — also das, was macOS
+ * ohne Auslagern zurückholen kann.
+ *
+ * `os.freemem()` taugt auf macOS nicht: es zählt nur komplett freie Seiten und
+ * steht meist nahe null, obwohl genug zurückholbar wäre. `vm_stat` liefert die
+ * Kategorien einzeln.
+ *
+ * @returns {Promise<number|null>} MB oder null, wenn nicht messbar.
+ */
+export function readAvailableMb() {
+  return new Promise((resolve) => {
+    let proc;
+    try {
+      proc = spawn("/usr/bin/vm_stat", [], {
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+    } catch {
+      resolve(null);
+      return;
+    }
+    let out = "";
+    proc.stdout.on("data", (d) => {
+      out += String(d);
+    });
+    proc.on("error", () => resolve(null));
+    proc.on("close", () => {
+      const size =
+        Number((out.match(/page size of (\d+) bytes/) || [])[1]) || 4096;
+      const pages = (label) => {
+        const m = out.match(new RegExp(String.raw`${label}:\s+(\d+)`));
+        return m ? Number(m[1]) : 0;
+      };
+      const total =
+        pages("Pages free") +
+        pages("Pages inactive") +
+        pages("Pages speculative") +
+        pages("Pages purgeable");
+      resolve(total > 0 ? Math.round((total * size) / (1024 * 1024)) : null);
+    });
+  });
 }
 
 let ticker = null;
@@ -489,9 +756,11 @@ function ensureTicker() {
   void localTick();
 }
 
-// Bei Glyph-Ende den Modellprozess mitnehmen — sonst bleiben 8 GB belegt.
+// Bei Glyph-Ende nur den SELBST gestarteten Modellprozess mitnehmen.
+// Ein adoptierter (von Hand gestarteter) Prozess gehört dem Nutzer — sonst
+// würde jeder Dev-Neustart, Smoke-Test oder Testserver den 27B abschießen.
 process.once("exit", () => {
-  const pid = child?.pid || adoptedPid || 0;
+  const pid = child?.pid || 0;
   if (pid) {
     try {
       process.kill(pid, "SIGTERM");
@@ -501,8 +770,14 @@ process.once("exit", () => {
   }
 });
 
-// Ticker sofort aufsetzen, damit ein laufendes Modell adoptiert wird.
-ensureTicker();
+/**
+ * Ticker starten: Adoption nach Neustart + Auto-Schlafen/Speicher-Bremse.
+ * Wird von der Bridge beim Start aufgerufen — nicht beim Import, sonst
+ * laufen Tests in die Hintergrundarbeit und Node beendet sich nicht.
+ */
+export function startLocalModelTicker() {
+  ensureTicker();
+}
 
 /** Für Tests: Zustand zurücksetzen. */
 export function resetLocalModelState() {
@@ -515,6 +790,8 @@ export function resetLocalModelState() {
   lastError = "";
   counter = null;
   metricsSeen = false;
+  memLowSamples = 0;
+  lastAvailMb = null;
   startPromise = null;
   healthMisses = 0;
   lastExitHint = "";

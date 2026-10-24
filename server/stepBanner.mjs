@@ -25,6 +25,10 @@ const STEP_LABELS = {
   WikiApply: ["WriteNote", "wendet Wiki-Änderung an (alias)"],
   WikiStatus: ["WikiStatus", "Wiki-Status (agent-digest)"],
   WebSearch: ["SearchWeb", "suche im Internet (Exa, grob)"],
+  // Suchbrücke (glyph-agent core/query_bridge.py): macht aus einer Rückfrage
+  // („wie oft muss ich das tun?") eigenständige Suchbegriffe, BEVOR Exa/TinyFish
+  // sie sehen. Steht deshalb VOR den SearchWeb-Zeilen.
+  SearchBridge: ["Query", "formuliert Suchbegriffe aus dem Verlauf"],
   ExtractUrl: ["Fetch", "rufe konkrete URL ab (TinyFish, fein)"],
   FetchUrl: ["Fetch", "rufe konkrete URL ab (TinyFish, fein)"],
   BrowseUrl: ["Browse", "URL-Zusammenfassung (TinyFish)"],
@@ -44,6 +48,16 @@ const STEP_LABELS = {
   SearchReplace: ["SearchReplace", "ersetzt Text in Datei (1 Treffer)"],
   WriteFile: ["WriteFile", "schreibt Datei (Diff+Backup)"],
   RunCommand: ["RunCommand", "Shell (Whitelist)"],
+  // ^_tick-Routinen — muss mit glyph-agent-acp.mjs (Routine*) übereinstimmen.
+  RoutineOverview: ["Routine", "sieht die Lage (Zähler + Ordner)"],
+  RoutineJobs: ["Routine", "liest den Job-Ordner (Daily/Inbox/Blocked)"],
+  RoutineRead: ["Routine", "liest einen Job"],
+  RoutineJobWrite: ["Routine", "legt einen Job an (nie überschreiben)"],
+  RoutineMove: ["Routine", "verschiebt einen Job (Done/Blocked)"],
+  RoutineLog: ["Routine", "schreibt ins Laufprotokoll"],
+  RoutinePlan: ["Routine", "liest Plan & Aktivität"],
+  RoutineSet: ["Routine", "legt ein To-do an oder ändert es"],
+  RoutineRun: ["Routine", "löst ein To-do jetzt aus"],
 };
 
 
@@ -82,12 +96,13 @@ export function resolveStepDisplay(name, detail = "") {
  * Live-Think-Zeile. Kein hartes „DeepSeek CODE“ — der Detailtext trägt das Modell.
  *
  * @param {string} [detail]
- * @param {{ isCode?: boolean }} [opts]
+ * @param {{ isCode?: boolean, isTick?: boolean }} [opts]
  * @returns {string}
  */
-export function formatThinkStep(detail, { isCode = false } = {}) {
+export function formatThinkStep(detail, { isCode = false, isTick = false } = {}) {
   const d = String(detail || "").trim();
   if (d) return `Think · ${d}`;
+  if (isTick) return "Think · ^_tick";
   return isCode ? "Think · ^_Code" : "Think · Cloud-Denker";
 }
 

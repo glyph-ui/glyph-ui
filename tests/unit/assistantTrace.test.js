@@ -442,6 +442,14 @@ describe("stripLeakedToolCalls", () => {
     const raw = 'Start {"tool": "Grep", "args": {"pattern": "foo"';
     assert.equal(stripLeakedToolCalls(raw), raw);
   });
+
+  it("drops an unclosed ChatDatei name/arguments dump", () => {
+    const raw =
+      'Die Datei liegt als Link im Chat.\n{"name": "ChatDatei", "arguments": {"title": "Betriebsanweisung Handhubwagen", "';
+    const cleaned = stripLeakedToolCalls(raw);
+    assert.equal(cleaned, "Die Datei liegt als Link im Chat.");
+    assert.ok(!cleaned.includes("ChatDatei"));
+  });
 });
 
 describe("cleanAssistantAnswer", () => {

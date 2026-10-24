@@ -55,6 +55,7 @@ function mixColor(a, b, t) {
  *   animateKey?: string | number | null,
  *   onCompact?: () => void,
  *   compactEnabled?: boolean,
+ *   pack?: { label: string, fill: number, centsLeft: number, consumed: number, warn: boolean } | null,
  * }} props
  */
 export function ContextLvlBar({
@@ -69,6 +70,7 @@ export function ContextLvlBar({
   animateKey = null,
   onCompact = null,
   compactEnabled = false,
+  pack = null,
 }) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
@@ -85,15 +87,24 @@ export function ContextLvlBar({
     overhead,
   });
 
-  const pct = Math.round(Math.min(1, Math.max(0, contextFill)) * 100);
-  /* Balken zeigt verbrauchte Token (`LVL 3 · ~5.2k/16k`); Prozent bleibt im Tooltip. */
-  const label = formatLvlBarLabel(pct, estimated, {
-    tokens: true,
-    used,
-    window: windowTokens,
-  });
-  const shortHint =
-    pct <= 0
+  const packOn = pack != null && Number.isFinite(Number(pack.fill));
+  const shownFill = packOn ? pack.fill : contextFill;
+  const shownGold = packOn ? pack.fill : goldFill;
+  const pct = Math.round(Math.min(1, Math.max(0, shownFill)) * 100);
+  /* glyph-ui.com: Rest-Cent und Verbrauch (`200c · 0/512k`). Schreibtisch: Fenster. */
+  const label = packOn
+    ? pack.label
+    : formatLvlBarLabel(pct, estimated, {
+        tokens: true,
+        used,
+        window: windowTokens,
+      });
+  const shownTooltip = packOn ? pack.label : tooltip;
+  const shortHint = packOn
+    ? pack.warn
+      ? `${label} — Guthaben wird knapp.`
+      : label
+    : pct <= 0
       ? `${label} — Kontext noch leer. Tippen für Legende.`
       : `${label} Kontext belegt. Tippen für Legende.`;
 
@@ -191,8 +202,8 @@ export function ContextLvlBar({
       }
     };
 
-    const targetFill = Math.min(1, Math.max(0, contextFill));
-    const targetGold = Math.min(1, Math.max(0, goldFill));
+    const targetFill = Math.min(1, Math.max(0, shownFill));
+    const targetGold = Math.min(1, Math.max(0, shownGold));
 
     // Load / session-switch: animate gray front from 0 → target once
     if (animRef.current.key !== animateKey && animateKey != null) {
@@ -242,7 +253,7 @@ export function ContextLvlBar({
       if (raf) cancelAnimationFrame(raf);
       ro?.disconnect();
     };
-  }, [contextFill, goldFill, softCapRatio, animateKey]);
+  }, [shownFill, shownGold, softCapRatio, animateKey]);
 
   function toggleOpen() {
     setOpen((v) => !v);
@@ -251,16 +262,16 @@ export function ContextLvlBar({
   return (
     <div
       ref={wrapRef}
-      className={`context-lvl-bar${open ? " is-open" : ""}`}
+      className={`context-lvl-bar${open ? " is-open" : ""}${packOn && pack.warn ? " is-pack-warn" : ""}`}
       role="meter"
       tabIndex={0}
-      aria-label="Kontext-Füllung"
+      aria-label={packOn ? "Paket" : "Kontext-Füllung"}
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={pct}
-      aria-valuetext={`${shortHint} ${tooltip}`}
+      aria-valuetext={`${shortHint} ${shownTooltip}`}
       aria-expanded={open}
-      title={`${shortHint} · ${tooltip}`}
+      title={`${shortHint} · ${shownTooltip}`}
       onClick={toggleOpen}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -281,9 +292,18 @@ export function ContextLvlBar({
       </div>
       {open ? (
         <p className="context-lvl-bar-legend">
-          <span>Steine = Kontext</span>
-          <span>Raupe = Leseposition</span>
-          <span>Strich = Soft-Cap</span>
+          {packOn ? (
+            <>
+              <span>Rest</span>
+              <span>Verbrauch</span>
+            </>
+          ) : (
+            <>
+              <span>Steine = Kontext</span>
+              <span>Raupe = Leseposition</span>
+              <span>Strich = Soft-Cap</span>
+            </>
+          )}
           {compactEnabled && onCompact ? (
             <button
               type="button"
@@ -296,7 +316,7 @@ export function ContextLvlBar({
               Zusammenpressen
             </button>
           ) : null}
-          <span>{tooltip}</span>
+          <span>{shownTooltip}</span>
         </p>
       ) : null}
     </div>

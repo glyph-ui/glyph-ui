@@ -6,7 +6,7 @@
 export const TASK_HEADS = [
   ["", "Später festlegen"],
   ["grok", "Grok Build"],
-  ["_code", "^_Code"],
+  ["_tick", "^_tick"],
   ["glyph-agent", "°_Agent"],
   ["codex", "Codex Build"],
 ];
@@ -61,9 +61,13 @@ export function handoffTitleFrom(userMessage, message) {
   return "Aufgabe";
 }
 
+/** Alte Übergaben (target `_code`) bleiben lesbar — ^_Code ist abgelöst. */
+const LEGACY_HEAD_LABELS = { _code: "^_Code (alt)", code: "^_Code (alt)" };
+
 export function headLabel(id) {
   const hit = TASK_HEADS.find(([value]) => value === id);
   if (hit) return hit[1];
+  if (LEGACY_HEAD_LABELS[id]) return LEGACY_HEAD_LABELS[id];
   return id || "kein Kopf";
 }
 

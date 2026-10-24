@@ -7,9 +7,10 @@
  * works for any profile; grok-only extras are declared per profile so the
  * UI can grey them out instead of failing at runtime.
  *
- * Rollen (C′ 2026-08-07):
+ * Rollen (C′ 2026-08-07, ^_tick 2026-10-11):
  *   Grok Build   = Build (XAI/Grok-Build Binary, id grok)
- *   ^_Code       = Code (DeepSeek V4 Flash via OpenRouter, glyph-agent MODE=code)
+ *   ^_tick       = Routine-Kopf (Nachfolger ^_Code: Code + tägliche Routinen,
+ *                  DeepSeek V4 Flash via glyph-agent MODE=tick)
  *   °_Agent      = Vault/Tools + Cloud-Antwort (id glyph-agent, MODE=agent, kein Shell)
  *
  * Copyright (c) 2026 Alexander Hubert
@@ -100,12 +101,13 @@ export function resolveClaudeCommand(env = process.env) {
  * @property {string} [via]
  * @property {string} [hint]
  * @property {NodeJS.ProcessEnv | Record<string, string>} [env]
- * @property {{ deepSearch: boolean, swarm: boolean, activity: boolean, sessionList: boolean, sessionHistory: boolean }} capabilities
+ * @property {{ deepSearch: boolean, swarm: boolean, activity: boolean, sessionList: boolean, sessionHistory: boolean, routines: boolean }} capabilities
  *   - deepSearch     : Grok-only Multi-Quellen-Recherche
- *   - swarm          : °_Agent / ^_Code — Planer+Suche+Synthese (Engine)
+ *   - swarm          : °_Agent / ^_tick — Planer+Suche+Synthese (Engine)
  *   - activity       : Aktivitäts-Kalender (liest ~/.grok/events.jsonl)
  *   - sessionList    : persistente Session-Liste (nur grok, ~/.grok/sessions)
  *   - sessionHistory : aktiver In-Memory-Verlauf der aktuellen Session (über ACP session/history)
+ *   - routines       : ^_tick — Routine-Lage im Plan-Tab (Job-Ordner, offene To-dos/Aufgaben)
  */
 
 /**
@@ -113,8 +115,8 @@ export function resolveClaudeCommand(env = process.env) {
  * @returns {AgentProfile[]}
  */
 export function buildAgentProfiles(env = process.env) {
-  // Drei Profile: Grok Build, ^_Code (DeepSeek-Code), °_Agent (Vault; id glyph-agent).
-  // Claude OAuth entfernt — Code läuft über glyph-agent MODE=code + OpenRouter DeepSeek.
+  // Drei Profile: Grok Build, ^_tick (Routine-/Code-Kopf), °_Agent (Vault; id glyph-agent).
+  // ^_tick hat ^_Code abgelöst (2026-10-11) — Code-Fähigkeiten + tägliche Routinen.
   return [
     {
       id: "grok",
@@ -125,21 +127,22 @@ export function buildAgentProfiles(env = process.env) {
       // (668 Token/Antwort, davon 463 Denken); Modellzeit ~47% der Wanduhr.
       args: ["agent", "--always-approve", "--no-leader", "--reasoning-effort", "medium", "stdio"],
       via: "bin",
-      capabilities: { deepSearch: true, swarm: false, activity: true, sessionList: true, sessionHistory: true },
+      capabilities: { deepSearch: true, swarm: false, activity: true, sessionList: true, sessionHistory: true, routines: false },
     },
     {
-      id: "_code",
-      label: "^_Code",
+      id: "_tick",
+      label: "^_tick",
       bin: process.execPath,
       args: [GLYPH_AGENT_ACP_FILE],
       via: "bin",
-      // CODE-Modus: DeepSeek V4 Flash 0731, Workspace-Tools, Freigabe in Glyph.
+      // TICK-Modus: DeepSeek V4 Flash 0731, Workspace-Tools + Routine-Ordner,
+      // Freigabe in Glyph. Erbt die Code-Fähigkeiten (^_Code ist abgelöst).
       env: {
-        GLYPH_AGENT_MODE: "code",
-        GLYPH_AGENT_ACP_NAME: "^_Code",
+        GLYPH_AGENT_MODE: "tick",
+        GLYPH_AGENT_ACP_NAME: "^_tick",
       },
-      hint: "DeepSeek V4 Flash · Grep/SearchReplace/Read/Write/Shell (Whitelist) · Roots: glyph-ui/agent/openclaw · Freigabe in Glyph",
-      capabilities: { deepSearch: false, swarm: true, activity: false, sessionList: false, sessionHistory: true },
+      hint: "DeepSeek V4 Flash · Routine-Kopf: Daily/Inbox-Batch + Plan & Aktivität (RoutineSet/Run) · Grep/Read/Write/Shell (Whitelist) · Freigabe in Glyph",
+      capabilities: { deepSearch: false, swarm: true, activity: false, sessionList: false, sessionHistory: true, routines: true },
     },
     {
       id: "glyph-agent",
@@ -152,7 +155,7 @@ export function buildAgentProfiles(env = process.env) {
         GLYPH_AGENT_ACP_NAME: "°_Agent",
       },
       hint: "B+: VaultFind/Wiki + Web/BrowseUrl + ReadPdf/Mail · Cloud-Antwort · kein Shell · Diff+Backup · :18899",
-      capabilities: { deepSearch: false, swarm: true, activity: false, sessionList: false, sessionHistory: true },
+      capabilities: { deepSearch: false, swarm: true, activity: false, sessionList: false, sessionHistory: true, routines: false },
     },
   ];
 }
@@ -178,8 +181,21 @@ export function resolveAgent(profiles, id) {
   // Alias: alte UI-IDs / Anzeige-Labels / Tippfehler
   const raw = id == null ? "" : String(id);
   let normalized = raw;
-  if (raw === "claude" || raw === "code" || raw === "^_Code") {
-    normalized = "_code";
+  if (
+    raw === "claude" ||
+    raw === "code" ||
+    raw === "_code" ||
+    raw === "^_Code" ||
+    raw === "^_code"
+  ) {
+    // ^_Code ist abgelöst — alte Sessions/State-Werte zeigen auf ^_tick.
+    normalized = "_tick";
+  } else if (
+    raw === "tick" ||
+    raw === "^_tick" ||
+    raw === "^_Tick"
+  ) {
+    normalized = "_tick";
   } else if (
     raw === "°_Agent" ||
     raw === "-_Agent" || // legacy label

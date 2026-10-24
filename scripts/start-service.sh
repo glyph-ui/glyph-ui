@@ -13,7 +13,32 @@ HOME_DIR="${HOME:-$(eval echo ~)}"
 # Prefer user-local and Homebrew paths without hardcoding a specific username.
 export PATH="${HOME_DIR}/.local/bin:${HOME_DIR}/.grok/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:${PATH:-}"
 
+# .env-Werte für die Pfade/Ports, die hier als Defaults gesetzt werden.
+# Node's --env-file überschreibt bereits gesetzte Variablen NICHT — ohne dieses
+# Vorlesen würde .env für PORT/HOST/... im Dienst wirkungslos bleiben.
+env_from_file() {
+  local key="$1" line val
+  [[ -f "$ROOT/.env" ]] || return 0
+  line="$(
+    grep -E "^[[:space:]]*(export[[:space:]]+)?${key}=" "$ROOT/.env" 2>/dev/null |
+      tail -n 1 || true
+  )"
+  [[ -n "$line" ]] || return 0
+  val="${line#*=}"
+  val="${val%$'\r'}"
+  if [[ "$val" == \"*\" || "$val" == \'*\' ]]; then
+    val="${val:1:${#val}-2}"
+  fi
+  printf '%s' "$val"
+}
+
 export NODE_ENV=production
+[[ -n "${HOST:-}" ]] || HOST="$(env_from_file HOST)"
+[[ -n "${PORT:-}" ]] || PORT="$(env_from_file PORT)"
+[[ -n "${GLYPH_UI_STATE_DIR:-}" ]] || GLYPH_UI_STATE_DIR="$(env_from_file GLYPH_UI_STATE_DIR)"
+[[ -n "${GLYPH_UI_CWD:-}" ]] || GLYPH_UI_CWD="$(env_from_file GLYPH_UI_CWD)"
+[[ -n "${GROK_BIN:-}" ]] || GROK_BIN="$(env_from_file GROK_BIN)"
+
 export HOST="${HOST:-127.0.0.1}"
 # Match Safari Web App start_url (http://localhost:5174/)
 export PORT="${PORT:-5174}"

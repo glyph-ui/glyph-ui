@@ -5,7 +5,7 @@
 deiner Wahl (Standard: **grok**).
 
 **Entwicklung:** Glyph startete als reine Grok-Oberfläche („Build Term for Grok“) und hat sich
-zu einer **offenen Multi-Agenten-UI** entwickelt (grok · ^_Code · °_Agent).
+zu einer **offenen Multi-Agenten-UI** entwickelt (grok · ^_tick · °_Agent).
 Daher nennen manche Kapitel noch „Grok“ — die Bedienung gilt aber für **alle** Profile gleich;
 wo ein Bereich nur für ein bestimmtes Profil gilt (z. B. Voice = nur grok), ist es markiert.
 
@@ -14,7 +14,7 @@ wo ein Bereich nur für ein bestimmtes Profil gilt (z. B. Voice = nur grok), ist
 
 ```
 Browser (React)  ──WebSocket──►  Node-Bridge  ──stdio ACP──►  Agent-Profil
-                                                              (grok | ^_Code | °_Agent)
+                                                              (grok | ^_tick | °_Agent)
 ```
 
 ### Agent-Profile im Überblick
@@ -22,7 +22,7 @@ Browser (React)  ──WebSocket──►  Node-Bridge  ──stdio ACP──►
 | Profil | Typ | Auth | Fähigkeiten (in Glyph) |
 |--------|-----|------|-------------------------|
 | **grok** (Standard) | Cloud | OAuth | Sessions ✅ · Deep Search ✅ · Swarm ✗ · Aktivität ✅ · Voice ✅ |
-| **^_Code** | Lokal + Cloud (Direct Vision-Exp) | Direct + Router-Reserve (OpenRouter oder Orca) | Read/Write/Shell mit Freigabe (Einmal / Auftrag / Task) · Swarm ✅ |
+| **^_tick** | Lokal + Cloud (Direct Vision-Exp) | Direct + Router-Reserve (OpenRouter oder Orca) | **Routine-Kopf** (Job-Ordner `memory-wiki/Routinen/`, Plan & Aktivität) · Read/Write/Shell mit Freigabe (Einmal / Auftrag / Task) · Swarm ✅ |
 | **°_Agent** (id `glyph-agent`) | Lokal + Cloud-Antwort | — | VaultFind, Web-Recherche, Cloud-Antwort (Engine); Swarm ✅; Deep Search ✗ |
 
 > 📊 Grafische Abläufe (warum + wie jedes Profil): `docs/glyph-profile-diagrams.html`
@@ -36,7 +36,7 @@ Browser (React)  ──WebSocket──►  Node-Bridge  ──stdio ACP──►
 ### Was Glyph ist (und nicht ist)
 
 **Glyph ist keine KI.** Es ist eine Browser-Hülle (ACP-Client) für Agenten, die du selbst mitbringst:
-Grok (OAuth/CLI), **^_Code** und **°_Agent** (lokale Engine + Keys). Chat, Streaming und Tools
+Grok (OAuth/CLI), **^_tick** und **°_Agent** (lokale Engine + Keys). Chat, Streaming und Tools
 laufen in Glyph — die „Intelligenz“ steckt im gewählten Agenten.
 
 Für Power-User mit lokalem Zugriff auf eigene Dateien (z. B. Mac Mini). Kein Cloud-Hosting von Glyph.
@@ -53,7 +53,7 @@ In der App: **Buch** → Tabs **Handbuch** · **Legende**. Keys: Graph → Kopf 
 | Profil | Voraussetzung |
 |--------|---------------|
 | **grok** (Default) | `grok` im PATH + eingeloggt (`grok login` / `~/.grok/auth.json`) |
-| **^_Code** | `OPENROUTER_API_KEY` + glyph-agent-Dienst (`:18899`) |
+| **^_tick** | `OPENROUTER_API_KEY` + glyph-agent-Dienst (`:18899`) |
 | **°_Agent** | Lokaler Dienst `server.py` auf `127.0.0.1:18899` (`~/glyph-agent`); Router (OpenRouter oder Orca) für Cloud-Antwort |
 
 ### Erster Start (Mac & Windows)
@@ -70,7 +70,7 @@ Browser: **http://127.0.0.1:5174**
 
 1. **Graph → Anbindung**: Direct / Router (live/cut), Keys schreiben.
 2. **Grok:** im Terminal `grok login` (OAuth — nicht in der Maske).
-3. **^_Code / °_Agent:** Graph → Anbindung: Direct / Router (live/cut), Bearbeiten = Host+Key; Modelle darunter. Engine starten.
+3. **^_tick / °_Agent:** Graph → Anbindung: Direct / Router (live/cut), Bearbeiten = Host+Key; Modelle darunter. Engine starten.
 4. Header: Profil wählen → **Kette** verbinden → chatten.
 
 **Windows:** gleich mit Node + npm. macOS-only: LaunchAgent, Dock-Icon, `Open Glyph.command` — weglassen.
@@ -125,7 +125,7 @@ Nach draußen nur **glyph-ui.com**. Bridge bleibt `127.0.0.1:5174`. Kein Tailsca
 
 #### glyph-ui.com (Arbeits-PC) — Web-Fläche
 
-Öffentliche Domain über Cloudflare-Tunnel. **Sitz `web`**, nur **°_Agent**, maximierter Chat. Spiegelt nicht den Schreibtisch. Grok Build und ^_Code nur auf dem Mac.
+Öffentliche Domain über Cloudflare-Tunnel. **Sitz `web`**, nur **°_Agent**, maximierter Chat. Spiegelt nicht den Schreibtisch. Grok Build und ^_tick nur auf dem Mac.
 
 | Schicht | Rolle |
 |---------|--------|
@@ -133,11 +133,11 @@ Nach draußen nur **glyph-ui.com**. Bridge bleibt `127.0.0.1:5174`. Kein Tailsca
 | Cloudflare Tunnel | `https://glyph-ui.com` → Loopback |
 | Web-Tor | Passwort vor der Fläche (`~/.glyph-ui/web-password` oder `GLYPH_WEB_PASSWORD`) |
 
-Nach dem ersten Start: einmal das generierte Passwort aus `~/.glyph-ui/web-password` (Mac). Danach in der Web-UI **Schloss → Passwort ändern**. Andere Geräte müssen sich neu anmelden. Optional zusätzlich [Cloudflare Access](https://one.dash.cloudflare.com/) (E-Mail-PIN) vor den Tunnel.
+Nach dem ersten Start: einmal das generierte Passwort aus `~/.glyph-ui/web-password` (Mac). Danach in der Web-UI **Aufladen → Kennwort**. Andere Geräte müssen sich neu anmelden. Optional zusätzlich [Cloudflare Access](https://one.dash.cloudflare.com/) (E-Mail-PIN) vor den Tunnel.
 
-Stift = neuer Chat (eigene ACP-Session auf dem Web-Sitz). Verlauf des Macs bleibt unberührt.
+Kein Stift auf der Web-Fläche (2026-10-24): „Neuer Chat“ und „UI neu laden“ hatten dieselbe Wirkung (Chat neu) — nur **UI neu laden** bleibt. Verlauf des Macs bleibt unberührt.
 
-Header (begrenzt): Stift · Befehle · Theme · Schloss · **UI neu laden**. Kein Ketten-Icon / **Beenden** — auf der Domain startet der Sitz von selbst; Tab zu = Browser, nicht Agent. Hängt die Fläche: **UI neu laden** (Anmeldung bleibt).
+Header (begrenzt): Befehle · Theme · **Aufladen** · **UI neu laden** · **Spenden**. Kein Ketten-Icon / **Beenden** — auf der Domain startet der Sitz von selbst; Tab zu = Browser, nicht Agent. Hängt die Fläche: **UI neu laden** (Anmeldung bleibt).
 
 **Nicht v1:** native iOS-App, WhatsApp-Anbindung an Glyph.
 
@@ -188,7 +188,7 @@ Chat und Composer folgen der **Grok Chat App**-Ästhetik: schwarze Fläche, Prom
 | **Deine Prompts** | Rechte **Sprechblase** (Fill `--user`, abgerundet) |
 | **Thinking / Tool / System** | Transparent; System mit feinem Gold-Strich links |
 | **Composer** | Bubble-Shell (gleiche Fill-Familie wie Prompts), großer Radius, weicher Schatten |
-| **Senden (Kopf)** | **Runder** Button: Graph-Pixel Grok Build / °_Agent / ^_Code |
+| **Senden (Kopf)** | **Runder** Button: Graph-Pixel Grok Build / °_Agent / ^_tick |
 | **Snack / Stopp** | Derselbe **Kreis** während der Arbeit; Stopp-Ziel = roter **Punkt** (nicht Rechteck); Arena 4×4, rund geclippt |
 | **Theme** | Hell/Dunkel; Light: hellere Bubble, Antworten weiter flach |
 
@@ -210,6 +210,7 @@ CSS-Tokens u. a. in `client/src/styles.css` (`--bg`, `--user`, `--assistant`, Sn
 | **Workspace** | Ordner | Öffnet den aktuellen Arbeitsordner (`cwd`) im Finder |
 | **Theme** | Hell/Dunkel | Darstellung umschalten |
 | **UI neu laden** | Neu laden | Web-UI neu laden (Ersatz für ⌘⇧R; Session bleibt) |
+| **Spenden** (Web) | Ko-fi | Glyph ist kostenlos nutzbar — Kaffee spendieren; öffnet Ko-fi in neuem Tab (nur glyph-ui.com) |
 
 ---
 
@@ -223,7 +224,7 @@ Oben rechts (Schreibtisch / Handy):
 | **offline** | kein Agent | Starten / neu verbinden |
 | **verbindet… / trennt…** | gerade umschalten | warten |
 
-**glyph-ui.com:** keine Kette. Stattdessen **UI neu laden** im Header.
+**glyph-ui.com:** keine Kette. Stattdessen **UI neu laden** im Header. Rechts außen goldener Herz-Knopf **Spenden** → Ko-fi (https://ko-fi.com/glyphui): Die Fläche ist kostenlos nutzbar und wird über Spenden finanziert.
 
 Ohne **verbunden** ist das Eingabefeld deaktiviert.
 
@@ -245,7 +246,7 @@ Ohne **verbunden** ist das Eingabefeld deaktiviert.
 
 | Aktion | Wirkung | Profil |
 |--------|---------|--------|
-| **Chat** | Normale Nachricht | alle |
+| **Chat** (°_Agent: **Search**) | Normale Nachricht | alle |
 | **Deep Search** | Strukturierte Multi-Quellen-Recherche (TUI: `/deep-research`) | **grok** (für andere Profile ausgegraut) |
 | **Fork** | Session branchen (TUI: `/fork`); Text = optionale Directive | alle |
 
@@ -312,7 +313,7 @@ Markdown (Codeblöcke, Links, …) wird vor dem TTS grob bereinigt.
 
 | Zustand | Was passiert |
 |---------|----------------|
-| Idle | Button zeigt den **Kopf** (Grok Build / °_Agent / ^_Code) → senden |
+| Idle | Button zeigt den **Kopf** (Grok Build / °_Agent / ^_tick) → senden |
 | Arbeitet | Snack-Animation (Schlange jagt Apfel) |
 | Ordner-Suche | Apfel: Arbeits-Vault. Wiki, TinyFish, Exa immer. Snack; Composer leer, Query in der Leiste. × oder Snack = Fetch abbrechen. Vault leer: KomNet einmal, sonst DGUV. Ohne Apfel: allgemeine Suche, Internet, soziale Netze |
 | Text + Enter während Arbeit | Nachricht landet in der **Warteschlange** |
@@ -437,15 +438,15 @@ Workspace steuert, wo der Agent Dateien liest/schreibt (Standard oft Home oder `
 
 **Nicht alle Fähigkeiten gelten für alle Profile.** **grok** hat als einziges Sessions-Liste, Deep Search und Aktivitäts-Kalender. Terminal/Shell und Workspace-Schreiben sind **nicht** bei °_Agent.
 
-**^_Code Freigabe:** `r+w` = Workspace beschreibbar, nicht Auto-Write. Dialog **Einmal** · **Für Auftrag** · **Für Task** — kein „immer“, kein „Für diese Session“. Aktiver Task in der Arbeitsleiste, **Widerrufen** dort. Tool-Karte: *Warum erlaubt?*
+**^_tick Freigabe:** `r+w` = Workspace beschreibbar, nicht Auto-Write. Dialog **Einmal** · **Für Auftrag** · **Für Task** — kein „immer“, kein „Für diese Session“. Aktiver Task in der Arbeitsleiste, **Widerrufen** dort. Tool-Karte: *Warum erlaubt?*
 
 | Bereich | Beispiele | Profile |
 |---------|-----------|---------|
-| Code & Dateien | Lesen, schreiben, refaktorieren im Workspace (Grep/SearchReplace/…) | **grok**, **^_Code** (nur `CODE_WORKSPACE_ROOTS`) |
-| Terminal / Shell | Builds, Tests, Git (Whitelist bei ^_Code; kein `rm`/`push`) | **grok**, **^_Code** — **nicht** °_Agent |
+| Code & Dateien | Lesen, schreiben, refaktorieren im Workspace (Grep/SearchReplace/…) | **grok**, **^_tick** (nur `CODE_WORKSPACE_ROOTS`) |
+| Terminal / Shell | Builds, Tests, Git (Whitelist bei ^_tick; kein `rm`/`push`) | **grok**, **^_tick** — **nicht** °_Agent |
 | Recherche | Web/Docs; Deep Search für tiefergehende Quellenarbeit | **grok** (Deep Search); **°_Agent** (Exa/TinyFish/BrowseUrl) |
 | Medien | Bilder/Video oft als Freitext; TUI: `/imagine`, `/imagine-video` | **grok** |
-| Erweiterungen | Skills, Workflows, Subagents, MCPs (je nach Installation) | **grok** |
+| Erweiterungen | Skills, Workflows, Subagents, MCPs (je nach Installation) | **grok** (alles); **°_Agent** (kuratierte Skills: Shared `~/.glyph/skills`, `~/.grok/skills`, agententaugliche Bundled-Skills — keine Grok-Plugins) |
 | Vault & Notizen | Obsidian-Vault-Suche, Wiki-Aliase, PDF, Mail, Diff+Backup | **°_Agent** |
 | Merken | Slash `/merken`: Erkenntnis nach Vorlage, Chat-Ja; Ablehnen ohne Suchwert | alle |
 | Cloud-Modelle | viele Modelle zum Testen/Anbinden über eine API | **grok** |
@@ -493,7 +494,7 @@ In der App: Symbol **Befehle** (filterbare Legende).
 | `GLYPH_UI_CWD` | Startverzeichnis | Workspace für neue Sessions |
 | `GROK_BIN` | `grok` | Pfad zur CLI |
 | `GROK_HOME` | `~/.grok` | Sessions & Auth |
-| `GLYPH_AGENT` | `grok` | Agent-Profil beim Start (grok \| _code \| glyph-agent) |
+| `GLYPH_AGENT` | `grok` | Agent-Profil beim Start (grok \| _tick \| glyph-agent) |
 | `GLYPH_AGENT_URL` | `http://127.0.0.1:18899` | glyph-agent-HTTP-Dienst (nur Profil °_Agent) |
 | `GLYPH_AGENT_TIMEOUT` | `300000` | Timeout (ms) für °_Agent-Antwort |
 | `WIKI_PATH` | `~/.glyph-ui/wiki` | Wiki-Archiv (optional Obsidian-Vault o. Ä.) |
@@ -564,7 +565,7 @@ Diagnose im TUI: **`/doctor`**.
 |------|--------|
 | `client/` | React-UI (Vite) |
 | `server/index.js` | Express + WebSocket, spawnt das aktive Agent-Profil … stdio, ACP-Bridge |
-| `server/agents.js` | Agent-Profile (grok, ^_Code, °_Agent) + Auflösung |
+| `server/agents.js` | Agent-Profile (grok, ^_tick, °_Agent) + Auflösung |
 | `server/sessions.js` | Session-Liste, Close, Transcript |
 | `server/activity.js` | Heatmap aus `events.jsonl` |
 | `server/wiki-archive.js` | Wiki-Root (kein Session-Dump mehr) |
@@ -585,7 +586,7 @@ Aktives Profil wird beim Start aus `GLYPH_AGENT` übernommen (Default: `grok`).
 | Profil | Spawnt | Hinweis |
 |--------|--------|---------|
 | **grok** (Default) | `grok agent --always-approve --no-leader stdio` | `GROK_BIN`; volle Fähigkeiten (Sessions, Deep Search, Aktivität) |
-| **^_Code** (id `_code`) | `node server/glyph-agent-acp.mjs` + `GLYPH_AGENT_MODE=code` | Workspace-Tools, Write/Shell mit Freigabe (Einmal / Auftrag / Task); Modell aus Graph/Anbindung |
+| **^_tick** (id `_tick`) | `node server/glyph-agent-acp.mjs` + `GLYPH_AGENT_MODE=tick` | Routine-Kopf: `memory-wiki/Routinen/` (Daily/Inbox/Blocked/Done/Log) + Plan & Aktivität per Chat (RoutineOverview/Jobs/Plan/Set/Run); Plan-Tab mit **Routine-Lage** (Kacheln + Job-Dateien + letzter Lauf); erbt Workspace-Tools, Write/Shell mit Freigabe (Einmal / Auftrag / Task) |
 | **°_Agent** (id `glyph-agent`) | `node server/glyph-agent-acp.mjs` | Vault/Tools + Cloud-Antwort; dünne ACP-Brücke zum lokalen Dienst auf `127.0.0.1:18899` |
 
 ### °_Agent (Vault/Tools + Cloud-Antwort)
@@ -623,6 +624,13 @@ curl http://127.0.0.1:18899/health    # → ok
 **HTTP-Schnittstelle:** `POST /chat` `{"message": "…"}` → `{"answer": "…", …}` · `GET /health`.
 Nur localhost gebunden; keine Internet-Exposition. Die UI zeigt Trace/Steps (z. B. VaultFind).
 
+**Suchbrücke (Stufe `Query`):** Bei einer Nachfrage wie „wie oft muss ich das tun?" formuliert
+die Engine zuerst eigenständige Suchbegriffe aus dem Chat-Verlauf (Stufe **Query**), bevor
+Exa/TinyFish gefragt werden — sonst liefert die nackte Rückfrage fremde Themen (Winterdienst,
+Postzustellung). Danach folgen ein bis zwei **SearchWeb**-Stufen und erst dann die Antwort.
+Ohne Verlauf, bei eigenständigen Fragen (z. B. „TRGS 600 Frist") und beim lokalen Kopf läuft
+kein Brücken-Call: die Suchanfrage bleibt dann wörtlich wie bisher.
+
 **Umgebungsvariablen (Adapter):**
 
 | Variable | Default | Bedeutung |
@@ -632,7 +640,7 @@ Nur localhost gebunden; keine Internet-Exposition. Die UI zeigt Trace/Steps (z.�
 
 **Warum die Mischung:** Drei unabhängige Bestandsquellen, damit kein einzelner Anbieter zum
 Blockierer wird. Vault/Recherche → **°_Agent**; breite Kontextarbeit/Sessions → **grok**
-oder **^_Code**. Grafische Abläufe: `docs/glyph-profile-diagrams.html`.
+oder **^_tick**. Grafische Abläufe: `docs/glyph-profile-diagrams.html`.
 
 ---
 
@@ -644,16 +652,16 @@ je nach Profil verarbeitet:
 | Profil | Textanhänge | Bilder |
 |--------|-------------|--------|
 | **°_Agent** | ✅ | ✅ Direct Vision-Exp |
-| **^_Code** | ✅ | ✅ Direct Vision-Exp |
+| **^_tick** | ✅ | ✅ Direct Vision-Exp |
 | **grok** | ✅ | ✅ native ACP |
 
 - **Textformate:** `.txt` `.md` `.csv` `.json` `.xml` `.yaml` `.log` `.html` · max. **2 MiB**
-- **Bildformate:** PNG, JPEG, WebP, GIF · max. **4 MiB** (°_Agent / ^_Code: `image_url` an Vision-Exp)
+- **Bildformate:** PNG, JPEG, WebP, GIF · max. **4 MiB** (°_Agent / ^_tick: `image_url` an Vision-Exp)
 - **Limit:** max. **8 Anhänge** / max. **12 MiB** pro Datei
 - **Fehler:** ungültiger Typ / kaputtes Base64 / zu groß → blockiert mit klarer Meldung,
   nie still verworfen und nie an das Modell gesendet.
 - **Anderes Direct-Modell (Flash/Pro ohne Vision) + Bild:** API 400.
-- **Datenschutz:** Bilder verlassen den Rechner (Direct/OpenRouter, auch °_Agent/^_Code).
+- **Datenschutz:** Bilder verlassen den Rechner (Direct/OpenRouter, auch °_Agent/^_tick).
   Keys nur in geschützten Env/.env (gitignored), nie in Dateien/Logs/Commits.
 
 Volle Details + Beispiele: siehe README → „Anhänge & Uploads".

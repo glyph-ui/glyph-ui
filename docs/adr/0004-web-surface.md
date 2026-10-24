@@ -1,6 +1,6 @@
 # 0004 · Web-Fläche auf glyph-ui.com
 
-glyph-ui.com ist die öffentliche Fläche für den Arbeits-PC: Sitz `web`, nur °_Agent, maximierter Chat, eigenes Passwort. Grok Build und ^_Code bleiben auf dem Mac (Loopback). Die Domain teilt nicht die Live-Session des Schreibtischs. Glyph-Serve über Tailscale ist abgezogen.
+glyph-ui.com ist die öffentliche Fläche für den Arbeits-PC: Sitz `web`, nur °_Agent, maximierter Chat, eigenes Passwort. Grok Build und ^_tick bleiben auf dem Mac (Loopback). Die Domain teilt nicht die Live-Session des Schreibtischs. Glyph-Serve über Tailscale ist abgezogen.
 
 ## Considered
 
@@ -13,6 +13,7 @@ glyph-ui.com ist die öffentliche Fläche für den Arbeits-PC: Sitz `web`, nur �
 
 - Host `glyph-ui.com` erzwingt Sitz `web` und Profil °_Agent. Query `?seat=desk` eskaliert nicht.
 - Web-Tor: Passwort (`~/.glyph-ui/web-password`). Wer auf glyph-ui.com eingeloggt ist, ändert es dort. `GLYPH_WEB_PASSWORD` (Env) blockiert die UI-Änderung, weil ein Restart sie überschriebe. WS-Token erst nach Login. Andere Sessions fallen beim Ändern.
+- Zugang ist eine Freigabe (`grantWebAccess`). Das Kennwort öffnet ohne Paket. **Aufladen** ruft später dieselbe Funktion serverseitig (`aufladen`) und schreibt das Paket. Der Knopf heißt Aufladen, nicht Passwort. Der Browser setzt die Quelle nicht. Kein Zahlungsanbieter in diesem Schritt.
 - Origin-Allowlist exakt, kein Substring (`glyph-ui.com.evil…`).
 - Cloudflare Access kann zusätzlich vor dem Tunnel sitzen.
 - Kein Tailscale Serve für Glyph. Admin-Fläche nur Loopback.

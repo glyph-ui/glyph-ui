@@ -1,5 +1,5 @@
 /**
- * ^_Code Freigabe-Scopes (Einmal / Auftrag / Task).
+ * ^_tick Freigabe-Scopes (Einmal / Auftrag / Task).
  * Copyright (c) 2026 Alexander Hubert — MIT License
  */
 

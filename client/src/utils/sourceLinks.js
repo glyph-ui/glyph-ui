@@ -359,7 +359,11 @@ function _linkifyInlineCode(part) {
       const href = _urlHref(t);
       return `[${siteLabel(href)}](${href})`;
     }
-    return m;
+    // Vault-Pfad (evtl. mit Vorspann wie „Quelle: ") → Chip-Link statt Code.
+    // Das Modell schreibt Quellen fast immer als `` `/Vault/…/Datei.pdf` ``;
+    // nur URLs aufzulösen ließ genau diese Treffer unklickbar (Meldung 2026-10-09).
+    const linkified = _linkifyVault(t);
+    return linkified === t ? m : linkified;
   });
 }
 
@@ -378,7 +382,10 @@ const URL_ISH =
  */
 function _tidyCitations(part) {
   let out = part.replace(/\bWEB\s+(?=((?:https?:\/\/|www\.)?[a-z0-9][a-z0-9-]*\.))/gi, "");
-  out = out.replace(/\(([^()]+)\)/g, (m, inner) => {
+  // (?<!\]): das Klammer-Ziel eines Markdown-Links (`[Text](URL)`) nie anfassen —
+  // sonst wird der Link aufgelöst und bleibt als doppelter Text ohne Ziel stehen
+  // (Meldung 2026-10-09: „Quelle: `bghm.de/…`" ergab `[bghm.de] [bghm.de](…)`).
+  out = out.replace(/(?<!\])\(([^()]+)\)/g, (m, inner) => {
     const pieces = inner
       .split(/[;,]/)
       .map((s) => s.trim())

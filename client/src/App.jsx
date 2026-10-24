@@ -17,7 +17,6 @@ import { ExtensionsModal } from "./components/ExtensionsModal.jsx";
 import { PromptHistoryPopup } from "./components/PromptHistoryPopup.jsx";
 import { RewindPicker } from "./components/RewindPicker.jsx";
 import { SlashHighlightedText } from "./components/SlashHighlightedText.jsx";
-import { VaultSearchToggle } from "./components/VaultSearchToggle.jsx";
 import { VaultSearchHits } from "./components/VaultSearchHits.jsx";
 import { TaskHandoffDialog } from "./components/TaskHandoffDialog.jsx";
 import {
@@ -39,6 +38,8 @@ import {
   canFork,
   canSwarm,
   composerActionLabel,
+  composerModeOptions,
+  isAgentHead,
   resolveComposerAction,
 } from "./utils/composerActions.js";
 import {
@@ -58,7 +59,8 @@ import {
   IconCopy,
   IconCheck,
   IconRefresh,
-  IconLock,
+  IconHeart,
+  IconKey,
   IconLink,
   IconLinkOff,
   IconRewind,
@@ -78,6 +80,7 @@ import {
 import { invalidateWsToken, wsUrl } from "./utils/format.js";
 import { resolveSeat, seatFetch } from "./utils/seat.js";
 import { surfaceHeaderControls } from "./utils/webSurface.js";
+import { DONATE_TOOLTIP, DONATE_URL } from "./utils/donate.js";
 import { modelHudText, shortModelLabel } from "./utils/assistantTrace.js";
 import {
   contextFillRatio,
@@ -86,11 +89,14 @@ import {
   isModelCompatibleWithProfile,
   PROFILE_DEFAULT_WINDOWS,
   PROMPT_OVERHEAD_TOKENS,
+  packCharge,
+  packMeter,
   resolveContextWindow,
   scrollMetrics,
   withPromptOverhead,
 } from "./utils/contextMeter.js";
 import { ToolCard } from "./components/ToolCard.jsx";
+import { ChatFileDrawer } from "./components/ChatFileDrawer.jsx";
 import { PermissionDialog } from "./components/PermissionDialog.jsx";
 import { WebGate } from "./components/WebGate.jsx";
 import { WebPasswordDialog } from "./components/WebPasswordDialog.jsx";
@@ -126,9 +132,8 @@ import {
   sliceMessagesBeforeUser,
 } from "./utils/rewind.js";
 import {
-  loadVaultSearchOn,
   saveVaultSearchOn,
-  migrateVaultSearchOn,
+  vaultSendIntent,
   defaultSelectedIds,
   selectedHits,
   normalizePreviewPayload,
@@ -177,12 +182,67 @@ function formatMsgClock(at) {
   }
 }
 
+/** Selbstdarstellung für glyph-ui.com — feste Festlegung, kein Modellaufruf. */
+const ABOUT_GLYPH = `**Glyph** ist dein Assistent – ein Kollege, der mitdenkt.
+
+**Was Glyph für dich tut**:
+
+- **Fachfragen beantworten** – auf Basis der Vault-Wissensbasis, nicht aus dem Bauch.
+- **Fundstellen liefern** – durchsucht Vorlagen, Notizen und PDFs im angebundenen Vault. Du fragst, Glyph zeigt dir, wo es steht.
+- **Wissen erweitern** – überführt neue Belege in die Wissensbasis.
+
+Kurz gesagt: Du stellst die Frage, Glyph sucht, liest, prüft und antwortet. Kein typischer Chatbot, sondern ein Searchbot.`;
+
+/** Kurzhinweis zum Knopf „Im Vault suchen“ — feste Festlegung. */
+const VAULT_HINT_TEXT = `**Im Vault suchen** ist aktiv.
+Tippe deine Frage unten ein und sende ab — Glyph sucht dann in den angeschlossenen Wissenssammlungen und zeigt dir die Fundstellen zum Anklicken. Eine Fundstelle kannst du mit in die nächste Frage nehmen.`;
+
+/** Sendearten für glyph-ui.com — feste Festlegung, kein Modellaufruf. */
+const SEND_MODES_HELP = `Drei Arten, wie du mit Glyph arbeiten kannst — kurz erklärt:
+
+**Chat** — das normale Gespräch.
+Du stellst eine Frage, er antwortet. Wie ein Kollege, den man kurz etwas fragt. Für Erklärungen, kurze Nachfragen, Formulierungen. Im Zweifel immer Chat — das ist der Standard, du kannst nichts falsch machen.
+
+**Vault** — die Suche in den angeschlossenen Wissenssammlungen.
+Glyph sucht für dich — Auditberichte, Vorlagen, Notizen, PDFs — und zeigt die Fundstellen als Liste. Jede Fundstelle ist anklickbar, du landest direkt im Dokument. Und du kannst eine Fundstelle mit in die nächste Frage nehmen: dann bezieht er seine Antwort genau auf diese Stelle.
+
+**Swarm** — für große Aufgaben, die belegt sein müssen.
+Glyph plant, sucht in mehreren Quellen und liefert das Ergebnis mit Fundstellen. Bei mehrstufigen Aufgaben siehst du zuerst den Plan und bestätigst ihn — erst dann arbeitet er los. Berichte, Texte und Zusammenfassungen schreibt er für dich.
+
+Faustregel: klein und schnell → Chat, in den Wissenssammlungen → Vault, groß oder belegt → Swarm.`;
+
+/** Sendearten auf °_Agent — Search ist die Beschriftung, die Aktion bleibt Chat. */
+const SEND_MODES_HELP_AGENT = `Drei Arten, mit Glyph zu arbeiten:
+
+**Search** – die normale Frage.
+Glyph sucht zuerst in Wissensbasis und Web und antwortet dann.
+
+**Vault** – die Suche in deinen Wissenssammlungen.
+Glyph durchsucht Auditberichte, Vorlagen, Notizen und PDFs und zeigt die Fundstellen als Liste. Jede Fundstelle ist anklickbar, du landest direkt im Dokument. Und du kannst eine Fundstelle mit in die nächste Frage nehmen: dann bezieht Glyph die Antwort genau auf diese Stelle.
+
+**Swarm** – für große Aufgaben, die belegt sein müssen.
+Glyph plant, sucht in mehreren Quellen und liefert das Ergebnis mit Fundstellen.
+
+Faustregel: Antwort gesucht → Search · Fundstelle gesucht → Vault · groß und belegpflichtig → Swarm.`;
+
+/** Befehle & Skills — fester Intro-Text für das Panel, kein Modellaufruf. */
+const COMMANDS_HELP = `Das sind fertige Abläufe für wiederkehrende Aufgaben — aufrufbar über den Schrägstrich „/“ im Eingabefeld. Du tippst „/“, es erscheint eine Auswahlliste, du wählst den passenden Eintrag, ergänzt bei Bedarf noch ein Wort und schickst ab. Statt jedes Mal zu erklären, was du willst, sagst du einfach den Namen des Ablaufs.`;
+
 const COMPOSER_MODE_HELP = {
-  chat: "Normale Nachricht an den Agenten",
+  chat: "Normale Nachricht an Glyph",
   "deep-search": "Hintergrund-Recherche mit Quellen",
   fork: "Session branchen — Text = optionale Directive",
   swarm: "Planer, Suche und Synthese mit Quellen",
+  vault: "Arbeits-Vault beim Senden, Treffer in der Leiste",
 };
+
+/** Hint under the mode button. °_Agent's base mode is Search, same id as Chat. */
+function composerModeHint(action, agentId) {
+  if ((!action || action === "chat") && isAgentHead(agentId)) {
+    return "Glyph sucht zuerst (Wissen, Web), antwortet dann";
+  }
+  return COMPOSER_MODE_HELP[action] || COMPOSER_MODE_HELP.chat;
+}
 
 export default function App() {
   const [connected, setConnected] = useState(false);
@@ -206,6 +266,51 @@ export default function App() {
   const webSurface = seat === "web";
   const headerControls = surfaceHeaderControls(seat);
   const [webUnlocked, setWebUnlocked] = useState(() => seat !== "web");
+  const [packAccess, setPackAccess] = useState(null);
+  const [packUsed, setPackUsed] = useState(0);
+  const packAccessRef = useRef(null);
+  packAccessRef.current = packAccess;
+  /**
+   * Rolle dieser Sitzung: „owner" (Haupt-Passwort) oder „guest".
+   * Kommt vom Web-Tor (/api/web-gate → access.role). Nur der Hauptzugang darf
+   * Einstellungen ändern; ohne Sitzung gilt „owner", damit die Admin-Fläche
+   * (kein Web-Tor) unverändert bleibt.
+   */
+  const webRole = webSurface
+    ? packAccess?.role === "guest"
+      ? "guest"
+      : "owner"
+    : "owner";
+
+  /**
+   * Zugang/Rolle neu laden. Nötig, sobald sich die Anmeldung ändert — beim
+   * ersten Rendern ist packAccess noch null (Tor geschlossen), und vorher galt
+   * dann „owner". Ein Gast hat dadurch den Schlüssel gesehen und den
+   * Passwort-Dialog geöffnet bekommen, obwohl er nichts ändern darf.
+   */
+  const refreshWebAccess = useCallback(async () => {
+    try {
+      const r = await fetch("/api/web-gate", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const j = await r.json().catch(() => ({}));
+      setPackAccess(j?.access?.opened ? j.access : null);
+      return j;
+    } catch {
+      return null;
+    }
+  }, []);
+  const chargedPack = webSurface ? packCharge(packAccess, packUsed) : 0;
+  const packBlockedRef = useRef(false);
+  packBlockedRef.current = webSurface && packMeter(chargedPack).blocked;
+  useEffect(() => {
+    try {
+      localStorage.removeItem("glyph-pack-used");
+    } catch {
+      /* alter Zähler ohne Aufladen darf nicht bleiben */
+    }
+  }, []);
   const [webGateHint, setWebGateHint] = useState("");
   const [webPasswordOpen, setWebPasswordOpen] = useState(false);
   useLayoutEffect(() => {
@@ -224,6 +329,7 @@ export default function App() {
       .then((j) => {
         if (cancelled) return;
         setWebUnlocked(Boolean(j?.ok) || j?.required === false);
+        setPackAccess(j?.access?.opened ? j.access : null);
       })
       .catch(() => {
         if (!cancelled) setWebUnlocked(false);
@@ -231,8 +337,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [seat]);
-  /** Ausgewählter Beleg für eine gemeinsame Kopf-zu-Kopf-Aufgabe. `?handoff=demo`. */
+  }, [seat]);  /** Ausgewählter Beleg für eine gemeinsame Kopf-zu-Kopf-Aufgabe. `?handoff=demo`. */
   const [taskHandoff, setTaskHandoff] = useState(() => {
     if (typeof window === "undefined") return null;
     try {
@@ -312,7 +417,7 @@ export default function App() {
   const copiedTimerRef = useRef(null);
   /** Message id whose copy/speak actions are revealed (tap-to-show). */
   const [actionsMsgId, setActionsMsgId] = useState(null);
-  /** Composer action: chat | deep-search | fork | swarm. */
+  /** Composer action: chat | deep-search | fork | swarm | vault. */
   const [sendAction, setSendAction] = useState(() => {
     try {
       const v = localStorage.getItem("gbt-action");
@@ -320,7 +425,8 @@ export default function App() {
         v === "deep-search" ||
         v === "fork" ||
         v === "chat" ||
-        v === "swarm"
+        v === "swarm" ||
+        v === "vault"
       ) {
         return v;
       }
@@ -329,12 +435,11 @@ export default function App() {
     }
     return "chat";
   });
-  /** Compact mode dropdown (Chat | Deep Search | Fork | Swarm). */
+  /** Compact mode dropdown. Gesperrte Modi fehlen. Vault nur bei °_Agent. */
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const modeMenuRef = useRef(null);
   const fileInputRef = useRef(null);
-  /** °_Agent: Ordner-Suche (Apfel) Default aus. An = Allowlist-Hubs. */
-  const [vaultSearchOn, setVaultSearchOn] = useState(false);
+  /** °_Agent: Ordner-Suche, Modus Vault. An = Allowlist-Hubs. */
   const [vaultHits, setVaultHits] = useState(null);
   const [vaultHitOn, setVaultHitOn] = useState(() => new Set());
   const [vaultSearchBusy, setVaultSearchBusy] = useState(false);
@@ -443,7 +548,23 @@ export default function App() {
   const drawerMode = "overlay";
   /** Zitierte Quelldatei im Trennfenster (null = geschlossen). */
   const [sourceFile, setSourceFile] = useState(null);
+  const [chatFile, setChatFile] = useState(null);
+  const chatFileUrls = useRef(new Set());
   const closeSource = useCallback(() => setSourceFile(null), []);
+
+  useEffect(() => {
+    const live = new Set();
+    for (const m of messages) {
+      for (const f of m.chatFiles || []) {
+        if (f.url) live.add(f.url);
+      }
+    }
+    for (const url of chatFileUrls.current) {
+      if (!live.has(url)) URL.revokeObjectURL(url);
+    }
+    chatFileUrls.current = live;
+    if (chatFile && !live.has(chatFile.url)) setChatFile(null);
+  }, [messages, chatFile]);
   // Pfade im Antworttext (MarkdownBody) öffnen dasselbe Fenster.
   useEffect(() => onOpenVaultSource(setSourceFile), []);
   useEffect(() => {
@@ -487,32 +608,13 @@ export default function App() {
       alive = false;
     };
   }, []);
-  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
-  useEffect(() => {
-    if (!headerMenuOpen) return undefined;
-    const onDoc = (e) => {
-      const t = e.target;
-      if (t && typeof t.closest === "function" && t.closest(".top-actions-more-wrap")) {
-        return;
-      }
-      setHeaderMenuOpen(false);
-    };
-    const onKey = (e) => {
-      if (e.key === "Escape") setHeaderMenuOpen(false);
-    };
-    document.addEventListener("pointerdown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [headerMenuOpen]);
-
   const [skills, setSkills] = useState([]);
   const [skillsHint, setSkillsHint] = useState(null);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [skillsError, setSkillsError] = useState("");
-  /** Slash-Popup state (Composer `/` token). */
+  /** Request-Generation: langsame Antwort eines alten Profils darf neues nicht überschreiben. */
+  const skillsReqRef = useRef(0);
+  /** Slash-Popup state (Composer „/“ token). */
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashQuery, setSlashQuery] = useState("");
   const [slashIndex, setSlashIndex] = useState(0);
@@ -1140,7 +1242,9 @@ export default function App() {
     [isNearBottom, setPinned, jumpToEnd],
   );
 
-  // Track pin from user scroll + feed LVL bar (gold shrinks when scrolling up)
+  // Track pin from user scroll + feed LVL bar (gold shrinks when scrolling up).
+  // webUnlocked: vor dem Web-Tor ist <main> nicht gemountet — ohne die Dep
+  // liefe der Effekt nach dem Login nie erneut (Scroll/Unpin bliebe tot).
   useEffect(() => {
     const el = listRef.current;
     if (!el) return undefined;
@@ -1180,7 +1284,7 @@ export default function App() {
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("keydown", onKeyDown);
     };
-  }, [isNearBottom, setPinned]);
+  }, [isNearBottom, setPinned, webUnlocked]);
 
   // While pinned: keep glued when content height grows (streaming markdown, tools)
   useEffect(() => {
@@ -1199,22 +1303,38 @@ export default function App() {
     const ro = new ResizeObserver(onGrow);
     ro.observe(content);
     return () => ro.disconnect();
-  }, [isNearBottom, jumpToEnd]);
+  }, [isNearBottom, jumpToEnd, webUnlocked]);
 
   const upsertStreaming = useCallback(
     (role, text, { replaceLast = false } = {}) => {
+      // Snapshots bei Aufrufzeit: React führt Updater erst beim Flush aus —
+      // nach finalizeStreaming wären Ref-Zugriffe im Updater bereits geleert
+      // (Protokoll-Streifen verschwand nach der Ausgabe).
+      const stepsSnapshot = [...stepsRef.current];
+      const draftsSnapshot = [...draftsRef.current];
       setMessages((prev) => {
         const next = [...prev];
-        const last = next[next.length - 1];
-        if (replaceLast && last && last.role === role && last.streaming) {
-          next[next.length - 1] = {
-            ...last,
+        // Nicht nur die LETZTE Zeile: ein tool-/system-Event kann zwischen
+        // zwei Chunks eingefügt worden sein. Sonst entstünde eine zweite
+        // Assistant-Zeile mit dem kompletten bisherigen Text (Duplikat).
+        let idx = -1;
+        if (replaceLast) {
+          for (let i = next.length - 1; i >= 0; i -= 1) {
+            if (next[i]?.role === role && next[i].streaming) {
+              idx = i;
+              break;
+            }
+          }
+        }
+        if (idx >= 0) {
+          next[idx] = {
+            ...next[idx],
             text,
             // Primär-Update: Steps/Drafts der laufenden Runde mitnehmen
             ...(role === "assistant"
               ? {
-                  steps: [...stepsRef.current],
-                  drafts: [...draftsRef.current],
+                  steps: stepsSnapshot,
+                  drafts: draftsSnapshot,
                 }
               : {}),
           };
@@ -1227,8 +1347,8 @@ export default function App() {
           streaming: true,
           ...(role === "assistant"
             ? {
-                steps: [...stepsRef.current],
-                drafts: [...draftsRef.current],
+                steps: stepsSnapshot,
+                drafts: draftsSnapshot,
                 protocolCollapsed: false,
               }
             : {}),
@@ -1243,6 +1363,10 @@ export default function App() {
 
   const finalizeStreaming = useCallback(() => {
     streamingRef.current = false;
+    // Vollständige Runde sichern, bevor die Refs geleert werden — fängt
+    // verlorene Stufen vorhergehender Updater ab (siehe upsertStreaming).
+    const stepsSnapshot = [...stepsRef.current];
+    const draftsSnapshot = [...draftsRef.current];
     setMessages((prev) =>
       prev.map((m) =>
         m.streaming
@@ -1251,6 +1375,13 @@ export default function App() {
               streaming: false,
               // Q8: Protokoll nach Fertig zugeklappt
               protocolCollapsed: true,
+              // Nur die Assistant-Spur erbt die Runden-Stufen (kein Doppel-Protokoll).
+              ...(m.role === "assistant"
+                ? {
+                    steps: m.steps?.length ? m.steps : stepsSnapshot,
+                    drafts: m.drafts?.length ? m.drafts : draftsSnapshot,
+                  }
+                : {}),
               ...(traceRef.current ? { trace: traceRef.current } : {}),
             }
           : m,
@@ -1266,20 +1397,28 @@ export default function App() {
 
   // Aktualisiert die laufende (letzte) Assistant-Message mit den Live-Stufen.
   const upsertStreamingSteps = useCallback(() => {
+    // Snapshots bei Aufrufzeit — Updater laufen später (siehe upsertStreaming).
     const steps = [...stepsRef.current];
     const drafts = [...draftsRef.current];
+    const text = assistantBuf.current || "";
     setMessages((prev) => {
       const next = [...prev];
-      const last = next[next.length - 1];
-      if (last && last.role === "assistant" && last.streaming) {
-        next[next.length - 1] = { ...last, steps, drafts };
+      let idx = -1;
+      for (let i = next.length - 1; i >= 0; i -= 1) {
+        if (next[i]?.role === "assistant" && next[i].streaming) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx >= 0) {
+        next[idx] = { ...next[idx], steps, drafts };
         return next;
       }
       // Keine laufende Assistant-Message (z.B. Stufen vor erstem Text): neue anlegen.
       next.push({
         id: `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         role: "assistant",
-        text: assistantBuf.current || "",
+        text,
         steps,
         drafts,
         streaming: true,
@@ -1293,19 +1432,27 @@ export default function App() {
 
   /** Hängt Zwischen-LLM-Entwürfe an die laufende Assistant-Message (Protokoll). */
   const upsertStreamingDrafts = useCallback(() => {
+    // Snapshots bei Aufrufzeit — Updater laufen später (siehe upsertStreaming).
     const drafts = [...draftsRef.current];
     const steps = [...stepsRef.current];
+    const text = assistantBuf.current || "";
     setMessages((prev) => {
       const next = [...prev];
-      const last = next[next.length - 1];
-      if (last && last.role === "assistant" && last.streaming) {
-        next[next.length - 1] = { ...last, drafts, steps };
+      let idx = -1;
+      for (let i = next.length - 1; i >= 0; i -= 1) {
+        if (next[i]?.role === "assistant" && next[i].streaming) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx >= 0) {
+        next[idx] = { ...next[idx], drafts, steps };
         return next;
       }
       next.push({
         id: `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         role: "assistant",
-        text: assistantBuf.current || "",
+        text,
         steps,
         drafts,
         streaming: true,
@@ -1406,6 +1553,10 @@ export default function App() {
         busyRef.current = false;
         setBusy(false);
         setReconnecting(false);
+        // Ein Turn kann während des Abrisses enden — turn_done kommt dann nie.
+        // Ohne Finalisierung bleibt die letzte Zeile streaming:true und
+        // isWorking dauerhaft wahr (Senden hängt in der Queue).
+        if (!closed) finalizeStreaming();
         // Token rotates every server process start; drop the injected/cached
         // value so the next connect reloads /api/ws-token instead of looping 401s.
         invalidateWsToken();
@@ -1534,6 +1685,56 @@ export default function App() {
           return;
         }
 
+        if (msg.type === "chat_file" && msg.file?.data && msg.file?.name) {
+          busyRef.current = true;
+          streamingRef.current = true;
+          setBusy(true);
+          lastActivityRef.current = Date.now();
+          let url = "";
+          try {
+            const bin = atob(msg.file.data);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+            url = URL.createObjectURL(new Blob([bytes], { type: msg.file.mime || "application/octet-stream" }));
+          } catch {
+            return;
+          }
+          const entry = {
+            id: `chat-file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            title: msg.file.title || msg.file.name,
+            name: msg.file.name,
+            mime: msg.file.mime || "",
+            text: msg.file.text || "",
+            url,
+          };
+          // Snapshots bei Aufrufzeit — Updater laufen später (siehe upsertStreaming).
+          const chatSteps = [...stepsRef.current];
+          const chatDrafts = [...draftsRef.current];
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last && last.role === "assistant" && last.streaming) {
+              next[next.length - 1] = {
+                ...last,
+                chatFiles: [...(last.chatFiles || []), entry],
+              };
+              return next;
+            }
+            next.push({
+              id: `assistant-${entry.id}`,
+              role: "assistant",
+              text: "",
+              streaming: true,
+              steps: chatSteps,
+              drafts: chatDrafts,
+              protocolCollapsed: false,
+              chatFiles: [entry],
+            });
+            return next;
+          });
+          return;
+        }
+
         if (msg.type === "draft_chunk") {
           // Zwischen-LLM → Protokoll · Entwürfe (nie Primärspur).
           busyRef.current = true;
@@ -1632,6 +1833,15 @@ export default function App() {
         }
 
         if (msg.type === "turn_done") {
+          const added = Number(msg.usage?.totalTokens);
+          if (
+            webSurface &&
+            packAccessRef.current?.source === "aufladen" &&
+            Number.isFinite(added) &&
+            added > 0
+          ) {
+            setPackUsed((prev) => (Number(prev) || 0) + added);
+          }
           finalizeStreaming();
           busyRef.current = false;
           setBusy(false);
@@ -1658,6 +1868,12 @@ export default function App() {
         if (msg.type === "permission_dismiss") {
           setPermissionReq((prev) =>
             prev && prev.id === msg.id ? null : prev,
+          );
+          return;
+        }
+        if (msg.type === "permission_ack" && msg.ok === false) {
+          setError(
+            "Freigabe abgelaufen oder nicht mehr offen — die Aktion wurde abgebrochen.",
           );
           return;
         }
@@ -1964,7 +2180,7 @@ export default function App() {
       }
     }
     const id = agent?.id;
-    if (id !== "_code" && id !== "code") {
+    if (id !== "_tick" && id !== "tick" && id !== "_code" && id !== "code") {
       setActiveTask(null);
       return;
     }
@@ -2017,15 +2233,19 @@ export default function App() {
       return;
     }
     const ws = wsRef.current;
-    if (ws?.readyState === 1) {
-      ws.send(
-        JSON.stringify({
-          type: "permission_response",
-          id: req.id,
-          optionId,
-        }),
-      );
+    if (ws?.readyState !== 1) {
+      // Nicht stillschweigend schließen: der Agent wartet sonst bis zum
+      // Timeout, und der Nutzer glaubt, er hätte geantwortet.
+      setError("Keine Verbindung — Freigabe nicht gesendet. Bitte kurz warten und erneut bestätigen.");
+      return;
     }
+    ws.send(
+      JSON.stringify({
+        type: "permission_response",
+        id: req.id,
+        optionId,
+      }),
+    );
     setPermissionReq(null);
   }, [permissionReq]);
 
@@ -2091,6 +2311,10 @@ export default function App() {
       typeof explicitText === "string" ? explicitText : input
     ).trim();
     if (attachBusy) return;
+    if (packBlockedRef.current) {
+      setError("Guthaben leer. 512k Token sind verbraucht.");
+      return;
+    }
     if (text && isUiReloadSlash(text)) {
       hardReloadUi();
       return;
@@ -2169,27 +2393,50 @@ export default function App() {
       return;
     }
 
-    const wantsVault =
-      isAgentProfile && action === "chat" && vaultSearchOn && Boolean(body);
+    const vaultMode =
+      isAgentProfile && action === "chat" && sendAction === "vault";
+    let vaultSelected = [];
+    if (vaultMode) {
+      const intent = vaultSendIntent({
+        appleOn: true,
+        searchBusy: vaultSearchBusy,
+        query: body,
+        hitsQuery: vaultHits?.query,
+        hitsStatus: vaultHits?.status,
+        error: vaultSearchError,
+        lastPickedCount: vaultLastPickedRef.current.length,
+        lastPickedQuery: vaultLastPickedQueryRef.current,
+      });
+      if (intent === "abort" || intent === "abort-then-search") {
+        abortVaultSearch();
+      }
+      if (intent === "search" || intent === "abort-then-search") {
+        setInput("");
+        clearPendingAttachments();
+        void runVaultSearch(body);
+        return;
+      }
+      const live = toWireSelected(
+        selectedHits(vaultHits?.hits || [], vaultHitOn),
+      );
+      vaultSelected = live.length ? live : vaultLastPickedRef.current;
+    }
 
-    // Apfel AN = automatische Suche läuft direkt beim Senden; der manuelle Picker
-    // blockiert NIE mehr. Gewählte Treffer (falls vorhanden) sind nur Zusatzkontext.
     const displayText = buildDisplayText(action, body, atts);
-    const livePicked = wantsVault
-      ? toWireSelected(selectedHits(vaultHits?.hits || [], vaultHitOn))
-      : [];
     const payload = {
       id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       text: body,
       action,
       displayText,
       ...(atts.length ? { attachments: atts } : {}),
-      ...(isAgentProfile && action === "chat"
+      ...(vaultMode
         ? {
-            vaultSearch: vaultSearchOn,
-            ...(livePicked.length ? { vaultSelected: livePicked } : {}),
+            vaultSearch: true,
+            ...(vaultSelected.length ? { vaultSelected } : {}),
           }
-        : {}),
+        : isAgentProfile && action === "chat"
+          ? { vaultSearch: false }
+          : {}),
     };
 
     // While Grok is working: park in queue (TUI-style wait area)
@@ -2198,13 +2445,17 @@ export default function App() {
       setQueue([...queueRef.current]);
       setInput("");
       clearPendingAttachments();
+      if (vaultMode) {
+        setVaultHits(null);
+        setVaultHitOn(new Set());
+      }
       requestAnimationFrame(() => scrollToBottom());
       return;
     }
 
     setInput("");
     clearPendingAttachments();
-    if (wantsVault) {
+    if (vaultMode) {
       setVaultHits(null);
       setVaultHitOn(new Set());
     }
@@ -2225,11 +2476,12 @@ export default function App() {
     sendAction,
     buildDisplayText,
     dispatchPayload,
-    vaultSearchOn,
     vaultSearchBusy,
+    vaultSearchError,
     vaultHits,
     vaultHitOn,
     abortVaultSearch,
+    runVaultSearch,
   ]);
 
   const rewindPoints = useMemo(
@@ -2729,9 +2981,8 @@ export default function App() {
   }, [transcriptRevealed]);
 
   /**
-   * Grok-only: Deep Search, Sessions, calendar. Other heads keep the control
-   * visible but disabled — a greyed button with a reason beats silent no-op.
-   * Swarm is the inverse: °_Agent / ^_Code, greyed on Grok.
+   * Deep Search nur Grok, Fork nur ^_Code und Grok, Swarm nur °_Agent und ^_Code.
+   * Was der Kopf nicht kann, steht nicht im Menü.
    */
   const caps = agent?.capabilities;
   const canDeepSearch = caps ? Boolean(caps.deepSearch) : true;
@@ -2741,31 +2992,24 @@ export default function App() {
   // Session-Lupe (persistent) nur bei sessionList:true (Grok); Aktivität nur bei activity:true.
   const canBrowseSessions = caps ? Boolean(caps.sessionList) : true;
   const canSeeActivity = caps ? Boolean(caps.activity) : true;
+  /** Routine-Lage (Job-Ordner, offene To-dos/Aufgaben): nur Köpfe mit der Fähigkeit. */
+  const canSeeRoutines = caps ? Boolean(caps.routines) : false;
   const agentLabel = agent?.label || "Agent";
   /**
-   * Product line by profile (roles in server/agents.js):
-   *   Grok Build → Build Term
-   *   ^_Code     → Code Term
-   *   °_Agent    → Chat Term
+   * Kopfzeile: der aktive Kopf — klar benannt (Grok / Code / Agent).
+   * Keine Rollen-Sprech-Reste wie „Build Term for …" (Meldung 2026-10-03).
    */
   const productTerm = useMemo(() => {
     const id = agent?.id || "";
-    if (id === "_code" || id === "code" || id === "claude") {
-      return `Code Term for ${agentLabel}`;
-    }
-    if (id === "glyph-agent" || id === "agent") {
-      // User-facing short name; picker keeps °_Agent.
-      return webSurface ? "°_Agent" : "Chat Term for Agent";
-    }
-    return "Build Term for Grok";
-  }, [agent?.id, agentLabel, webSurface]);
+    if (id === "_tick" || id === "tick") return "Tick";
+    if (id === "_code" || id === "code" || id === "claude") return "Code";
+    if (id === "glyph-agent" || id === "agent") return "Agent";
+    return "Grok";
+  }, [agent?.id]);
   const unavailableFor = useCallback(
     (what) => `${what} ist nur im grok-Profil verfügbar (aktiv: ${agentLabel})`,
     [agentLabel],
   );
-  const swarmBlockedReason = `Swarm läuft über °_Agent und ^_Code (aktiv: ${agentLabel})`;
-  const forkBlockedReason = `Fork läuft über ^_Code und Grok Build (aktiv: ${agentLabel})`;
-
   /** Tooltip for the agent picker: command + why some controls are greyed. */
   const agentPickTitle = useMemo(() => {
     if (!agent) return "Agent wählen";
@@ -2788,7 +3032,10 @@ export default function App() {
     if (!canForkAction && sendAction === "fork") {
       setSendAction("chat");
     }
-  }, [canDeepSearch, canSwarmAction, canForkAction, sendAction]);
+    if (!isAgentProfile && sendAction === "vault") {
+      setSendAction("chat");
+    }
+  }, [canDeepSearch, canSwarmAction, canForkAction, isAgentProfile, sendAction]);
 
   // Same for panels that are open when the agent changes under them.
   // Kalender-Panel bleibt offen (Tab Plan gilt für alle Profile; Aktivität ggf. deaktiviert).
@@ -2802,6 +3049,8 @@ export default function App() {
     [busy, messages, vaultSearchBusy],
   );
   const sendPointerArmedRef = useRef(false);
+  /** Letzter Send-Impuls — schützt vor Doppel-Tap, der den Turn cancelt. */
+  const sendTapAtRef = useRef(0);
   const onSendButton = useCallback(() => {
     const canQueue =
       input.trim() ||
@@ -2809,13 +3058,19 @@ export default function App() {
       (pendingAttachments.length > 0 && sendAction !== "fork");
     if (isWorking) {
       if (canQueue) {
+        sendTapAtRef.current = Date.now();
         send();
         return;
       }
+      // Zweiter Tap direkt nach dem Senden: der Composer ist inzwischen leer
+      // und isWorking true — ohne Sperre würde dieser Tap den gerade
+      // gestarteten Turn canceln.
+      if (Date.now() - sendTapAtRef.current < 800) return;
       if (!cancelling) void cancelTurn();
       return;
     }
     if (snackDemo) return;
+    sendTapAtRef.current = Date.now();
     send();
   }, [
     cancelling,
@@ -3000,7 +3255,7 @@ export default function App() {
     const el = listRef.current;
     if (!el) return;
     requestAnimationFrame(() => setScrollHud(scrollMetrics(el)));
-  }, [messages.length, isWorking]);
+  }, [messages.length, isWorking, webUnlocked]);
 
   // Wiederkehrende To-dos: Systemzeile im Chat wenn UI offen (Q20=B)
   const recurringEventsAfterRef = useRef("");
@@ -3092,8 +3347,8 @@ export default function App() {
 
   const prevSessionRef = useRef(sessionId);
   useEffect(() => {
+    const on = isAgentProfile && sendAction === "vault";
     if (!isAgentProfile) {
-      setVaultSearchOn(false);
       setVaultHits(null);
       setVaultHitOn(new Set());
       setVaultSearchError("");
@@ -3103,36 +3358,15 @@ export default function App() {
     }
     const prev = prevSessionRef.current;
     prevSessionRef.current = sessionId;
-    const on =
-      sessionId && !prev
-        ? migrateVaultSearchOn("new", sessionId)
-        : loadVaultSearchOn(sessionId);
-    setVaultSearchOn(on);
-    // Follow-up after first send: sessionId appears — keep last pick.
-    // Switching chats: new picker.
+    saveVaultSearchOn(sessionId, on);
     if (prev && sessionId && prev !== sessionId) {
       vaultLastPickedRef.current = [];
       vaultLastPickedQueryRef.current = "";
-    }
-    if (!on) {
       setVaultHits(null);
       setVaultHitOn(new Set());
       setVaultSearchError("");
     }
-  }, [sessionId, isAgentProfile]);
-
-  const toggleVaultSearch = useCallback(() => {
-    setVaultSearchOn((v) => {
-      const next = !v;
-      saveVaultSearchOn(sessionId, next);
-      return next;
-    });
-    setVaultHits(null);
-    setVaultHitOn(new Set());
-    setVaultSearchError("");
-    vaultLastPickedRef.current = [];
-    vaultLastPickedQueryRef.current = "";
-  }, [sessionId]);
+  }, [sessionId, isAgentProfile, sendAction]);
   const workingSeconds = useWorkingSeconds(showWorking);
 
   /** Session, paths, and build — only in the subtitle tooltip (quiet by default). */
@@ -3162,8 +3396,11 @@ export default function App() {
     return lines.length ? lines.join("\n") : undefined;
   }, [seat, sessionId, cwd, bridgeMeta, modelHud]);
 
+  /** Siehe skillsReqRef — HUD-Antworten verschiedener Profile dürfen sich nicht überholen. */
+  const hudReqRef = useRef(0);
   const refreshModelHud = useCallback(async () => {
     const profileId = agent?.id || "";
+    const req = ++hudReqRef.current;
     if (!isCloudModelProfile(profileId)) {
       setModelHud({
         kind: "grok",
@@ -3175,6 +3412,7 @@ export default function App() {
     try {
       const res = await fetch("/api/bindings", { cache: "no-store" });
       const data = await res.json().catch(() => ({}));
+      if (req !== hudReqRef.current) return;
       if (!res.ok) return;
       setModelHud(modelHudFromBindings(data, profileId));
     } catch {
@@ -3200,20 +3438,19 @@ export default function App() {
     if (!isCloudModelProfile(agent?.id || "")) return undefined;
     void refreshLocalModel();
     const ms = localModel?.state === "starting" ? 1500 : 10000;
-    const id = window.setInterval(() => void refreshLocalModel(), ms);
+    const id = window.setInterval(() => {
+      void refreshLocalModel();
+      // Solange der lokale Modus arbeitet, Aktivität melden — sonst hält die
+      // Speicher-Bremse eine lange Antwort für Leerlauf (v. a. ohne /metrics).
+      if (
+        localModel?.state === "ready" &&
+        (busyRef.current || streamingRef.current)
+      ) {
+        void fetch("/api/local/touch", { method: "POST" }).catch(() => {});
+      }
+    }, ms);
     return () => window.clearInterval(id);
   }, [agent?.id, localModel?.state, refreshLocalModel]);
-
-  /** 27B wecken (dauert ~16 s; der Server antwortet sofort, wir pollen). */
-  const handleLocalStart = useCallback(async () => {
-    setLocalAction(true);
-    try {
-      await fetch("/api/local/start", { method: "POST" }).catch(() => {});
-      void refreshLocalModel();
-    } finally {
-      setLocalAction(false);
-    }
-  }, [refreshLocalModel]);
 
   /** 27B schlafen legen — gibt die ~8 GB frei. */
   const handleLocalSleep = useCallback(async () => {
@@ -3289,7 +3526,8 @@ export default function App() {
    */
   const handleProviderChange = useCallback(
     async (mode) => {
-      const kind = agent?.id === "_code" ? "code" : "agent";
+      const kind =
+        agent?.id === "_tick" || agent?.id === "_code" ? "code" : "agent";
       try {
         if (mode === "local") {
           // Lokaler Kopf: über den eigenen, engen Endpunkt setzen (so geht es
@@ -3345,8 +3583,11 @@ export default function App() {
     if (isAgentProfile && vaultSearchBusy) {
       return "Suche im Vault…";
     }
-    if (isAgentProfile && vaultSearchOn && vaultHits) {
+    if (sendAction === "vault" && vaultHits) {
       return "Treffer in der Leiste anwählen · Mit Auswahl senden";
+    }
+    if (sendAction === "vault") {
+      return "Vault… Arbeitsordner, Treffer in der Leiste";
     }
     if (sendAction === "deep-search") {
       return "Deep Search Query… z. B. Compare Postgres 17 vs MySQL 9";
@@ -3358,7 +3599,7 @@ export default function App() {
       return "Optional: Directive für den Fork… (leer = nur Session branchen)";
     }
     // Keep short: attach hints live in the empty state; long copy wraps badly on phones
-    return `Nachricht an ${agentLabel}…  ·  / für Befehle`;
+    return "Nachricht an Glyph …  ·  / für Befehle";
   }, [
     connected,
     isWorking,
@@ -3370,33 +3611,43 @@ export default function App() {
     agentLabel,
     isAgentProfile,
     vaultSearchBusy,
-    vaultSearchOn,
     vaultHits,
   ]);
 
   // Profile-dependent skills (offline-capable disk scan on the bridge)
   const loadSkills = useCallback(async (profileId) => {
     const id = profileId || "grok";
+    const req = ++skillsReqRef.current;
     setSkillsLoading(true);
     setSkillsError("");
     try {
       const res = await fetch(`/api/skills?profile=${encodeURIComponent(id)}`);
       const json = await res.json();
+      if (req !== skillsReqRef.current) return;
       if (!res.ok) throw new Error(json.error || "Skills laden fehlgeschlagen");
       setSkills(Array.isArray(json.skills) ? json.skills : []);
       setSkillsHint(json.hint || null);
     } catch (err) {
+      if (req !== skillsReqRef.current) return;
       setSkills([]);
       setSkillsHint(null);
       setSkillsError(err instanceof Error ? err.message : String(err));
     } finally {
-      setSkillsLoading(false);
+      if (req === skillsReqRef.current) setSkillsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void loadSkills(agent?.id || "grok");
   }, [agent?.id, loadSkills]);
+
+  // Prompt-History ist pro Profil gespeichert — der In-Memory-Stand darf beim
+  // Kopfwechsel nicht den alten Verlauf anbieten.
+  useEffect(() => {
+    setHistoryItems([]);
+    setHistoryOpen(false);
+    setHistoryIndex(null);
+  }, [agent?.id]);
 
   const skillCatalog = useMemo(
     () =>
@@ -3478,7 +3729,7 @@ export default function App() {
 
   useLayoutEffect(() => {
     resizeComposer();
-  }, [input, resizeComposer]);
+  }, [input, resizeComposer, webUnlocked]);
 
   /* Keep mirror width in sync when the composer pane is resized. */
   useEffect(() => {
@@ -3489,7 +3740,7 @@ export default function App() {
     });
     ro.observe(ta);
     return () => ro.disconnect();
-  }, [resizeComposer]);
+  }, [resizeComposer, webUnlocked]);
 
   /* Close mode menu on outside click / Escape. */
   useEffect(() => {
@@ -3615,6 +3866,8 @@ export default function App() {
         onUnlocked={() => {
           setWebGateHint("");
           setWebUnlocked(true);
+          // Ohne dieses Nachladen bliebe packAccess null und webRole "owner".
+          void refreshWebAccess();
         }}
       />
     );
@@ -3774,8 +4027,11 @@ export default function App() {
                 </span>
               )}
               <span className="sub sub--inline" title={headerTooltip}>
-                {webSurface ? productTerm : `${productTerm} · ACP`}
-                {seat === "phone" ? " · Handy" : ""}
+                {webSurface
+                  ? seat === "phone"
+                    ? "Handy"
+                    : null
+                  : `${productTerm} · ACP${seat === "phone" ? " · Handy" : ""}`}
               </span>
             </h1>
           </div>
@@ -3783,25 +4039,16 @@ export default function App() {
             {webSurface ? (
               <>
                 <div className="top-actions-groups" role="group" aria-label="Header-Aktionen">
-                  <div className="top-actions-group" data-group="chat" title="Chat">
-                    <button
-                      type="button"
-                      className="pill pill-btn pill-btn--icon"
-                      onClick={reset}
-                      disabled={!connected || busy}
-                      title="Neuer Chat"
-                      aria-label="Neuer Chat"
-                    >
-                      <IconCompose size={18} />
-                    </button>
-                  </div>
+                  {/* Kein eigener „Neuer Chat" auf der Web-Fläche: „UI neu laden"
+                      führt zum selben Effekt (Chat neu) — doppelt hatte keinen
+                      Mehrwert (Meldung 2026-10-24). Desk behält den Stift. */}
                   <div className="top-actions-group" data-group="tools" title="Tools">
                     <button
                       type="button"
                       className="pill pill-btn pill-btn--icon"
                       onClick={() => openDrawer("skills")}
-                      title="Befehle & Skills"
-                      aria-label="Befehle & Skills"
+                      title="Befehle"
+                      aria-label="Befehle"
                     >
                       <IconCommands size={18} />
                     </button>
@@ -3816,15 +4063,20 @@ export default function App() {
                     >
                       <IconTheme size={18} />
                     </button>
-                    <button
-                      type="button"
-                      className="pill pill-btn pill-btn--icon"
-                      onClick={() => setWebPasswordOpen(true)}
-                      title="Passwort"
-                      aria-label="Passwort"
-                    >
-                      <IconLock size={18} />
-                    </button>
+                    {/* Nur der Hauptzugang sieht den Schlüssel: ein Gast darf
+                        den Zugang nicht ändern — sonst könnte er das Passwort
+                        neu setzen und alle anderen aussperren. */}
+                    {webRole === "owner" ? (
+                      <button
+                        type="button"
+                        className="pill pill-btn pill-btn--icon"
+                        onClick={() => setWebPasswordOpen(true)}
+                        title="Kennwort und Gastzugang"
+                        aria-label="Kennwort und Gastzugang"
+                      >
+                        <IconKey size={18} />
+                      </button>
+                    ) : null}
                     {headerControls.reload ? (
                       <button
                         type="button"
@@ -3837,31 +4089,31 @@ export default function App() {
                       </button>
                     ) : null}
                   </div>
-                </div>
-                <div className="top-actions-more-wrap">
-                  <button
-                    type="button"
-                    className={`pill pill-btn pill-btn--icon top-actions-more-btn${headerMenuOpen ? " is-open" : ""}`}
-                    aria-haspopup="menu"
-                    aria-expanded={headerMenuOpen}
-                    aria-label="Mehr Aktionen"
-                    title="Mehr"
-                    onClick={() => setHeaderMenuOpen((o) => !o)}
+                  <div
+                    className="top-actions-group top-actions-group--support"
+                    data-group="support"
+                    title="Unterstützen"
                   >
-                    ···
-                  </button>
-                  {headerMenuOpen ? (
-                    <div className="top-actions-menu" role="menu" aria-label="System">
-                      <button type="button" role="menuitem" className="top-actions-menu-item" onClick={() => { reset(); setHeaderMenuOpen(false); }} disabled={!connected || busy}>Neuer Chat</button>
-                      <button type="button" role="menuitem" className="top-actions-menu-item" onClick={() => { openDrawer("skills"); setHeaderMenuOpen(false); }}>Befehle &amp; Skills</button>
-                      <button type="button" role="menuitem" className="top-actions-menu-item" onClick={() => { toggleTheme(); setHeaderMenuOpen(false); }}>Theme</button>
-                      <button type="button" role="menuitem" className="top-actions-menu-item" onClick={() => { setWebPasswordOpen(true); setHeaderMenuOpen(false); }}>Passwort</button>
-                      {headerControls.reload ? (
-                        <button type="button" role="menuitem" className="top-actions-menu-item" onClick={() => { hardReloadUi(); setHeaderMenuOpen(false); }}>UI neu laden</button>
-                      ) : null}
-                    </div>
-                  ) : null}
+                    <a
+                      className="pill pill-btn pill-btn--icon pill-btn--donate"
+                      href={DONATE_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={DONATE_TOOLTIP}
+                      aria-label="Spenden (Ko-fi öffnet in einem neuen Tab)"
+                    >
+                      <IconHeart size={18} />
+                    </a>
+                  </div>
                 </div>
+                {/*
+                 * Hier stand ein „···"-Menü mit Neuer Chat / Befehle & Skills /
+                 * Theme / Aufladen / UI neu laden. Es war per CSS dauerhaft
+                 * ausgeblendet (.top-actions-more-wrap { display: none; }, auch
+                 * unter 640 px) und wiederholte außerdem jeden Knopf, der
+                 * daneben schon steht. Entfernt: toter Code, der beim Lesen nur
+                 * den Eindruck erweckt, es gäbe zwei Wege zum selben Ziel.
+                 */}
               </>
             ) : null}
             {!webSurface && agents.length > 1 ? (
@@ -3907,7 +4159,7 @@ export default function App() {
                   setLageFocus(
                     modelHud.kind === "grok"
                       ? "grok"
-                      : agent?.id === "_code"
+                      : agent?.id === "_tick" || agent?.id === "_code"
                         ? "code"
                         : "agent",
                   );
@@ -3953,6 +4205,7 @@ export default function App() {
                 state={localModel?.state || "sleeping"}
                 busy={localAction}
                 disabled={isWorking || agentSwitching}
+                locked={webRole === "guest"}
                 onToggle={(enabled) => void handleLocalToggle(enabled)}
               />
             ) : null}
@@ -4073,14 +4326,14 @@ export default function App() {
               {visibleMessages.length === 0 ? (
                 <div className="empty">
                   {webSurface
-                    ? `Nachricht an ${agentLabel}. Eigener Chat — nicht der Mac.`
+                    ? "Womit kann ich helfen?"
                     : `Schreib eine Nachricht — Glyph verbindet lokal per ACP mit ${agentLabel}.`}
                   <br />
                   <span className="empty-soft">
                     {webSurface ? (
                       <>
                         Screenshot <strong>einfügen</strong> · Datei{" "}
-                        <strong>ziehen</strong> · Stift = neuer Chat
+                        <strong>ziehen</strong>
                       </>
                     ) : (
                       <>
@@ -4095,11 +4348,42 @@ export default function App() {
                         type="button"
                         className="empty-starter-chip"
                         onClick={() => {
-                          if (!vaultSearchOn) toggleVaultSearch();
+                          // Modus einschalten und kurz erklären — wie die
+                          // anderen Schnellstart-Knöpfe (Meldung 2026-10-03).
+                          setSendAction("vault");
                           composerRef.current?.focus();
+                          const tv = Date.now();
+                          setMessages((prev) => [
+                            ...prev,
+                            {
+                              id: `user-${tv}`,
+                              role: "user",
+                              text: "Im Vault suchen",
+                              synthetic: true,
+                              at: tv,
+                            },
+                            {
+                              id: `assistant-${tv}-vault`,
+                              role: "assistant",
+                              text: VAULT_HINT_TEXT,
+                              streaming: false,
+                              protocolCollapsed: true,
+                              at: tv + 1,
+                            },
+                          ]);
+                          requestAnimationFrame(() => scrollToBottom({ force: true }));
                         }}
                       >
-                        Vault suchen
+                        Im Vault suchen
+                      </button>
+                    ) : null}
+                    {canSeeRoutines ? (
+                      <button
+                        type="button"
+                        className="empty-starter-chip"
+                        onClick={() => openDrawer("plan")}
+                      >
+                        Routinen
                       </button>
                     ) : null}
                     <button
@@ -4107,41 +4391,67 @@ export default function App() {
                       className="empty-starter-chip"
                       onClick={() => openDrawer("skills")}
                     >
-                      Skill starten
+                      Befehle
                     </button>
                     <button
                       type="button"
                       className="empty-starter-chip"
                       onClick={() => {
-                        // One-click send: pass text into send() — setInput+send would be stale.
-                        const prompt =
-                          "Was ist Glyph? Erklär kurz und klar auf Nutzerebene: Web-Fläche glyph-ui.com (°_Agent) und dass der Schreibtisch auf dem Mac bleibt. Keine Ports, Pfade, Auth- oder Technik-Internals.";
-                        send(prompt);
+                        // Feste Selbstdarstellung: sofort, kostenlos, immer gleich
+                        // (Meldung 2026-10-03) — kein Modellaufruf, keine Suche.
+                        const t = Date.now();
+                        setMessages((prev) => [
+                          ...prev,
+                          {
+                            id: `user-${t}`,
+                            role: "user",
+                            text: "Was ist Glyph?",
+                            synthetic: true,
+                            at: t,
+                          },
+                          {
+                            id: `assistant-${t}-about`,
+                            role: "assistant",
+                            text: ABOUT_GLYPH,
+                            streaming: false,
+                            protocolCollapsed: true,
+                            at: t + 1,
+                          },
+                        ]);
+                        requestAnimationFrame(() => scrollToBottom({ force: true }));
                       }}
                     >
-                      Kurz erklären
+                      Was ist Glyph?
                     </button>
                     <button
                       type="button"
                       className="empty-starter-chip"
                       onClick={() => {
-                        const prompt =
-                          "Erklär die Chat-Modi Deep Search, Fork und Swarm auf Nutzerebene für die aktuelle Nutzung auf glyph-ui.com / °_Agent: Warum Deep Search hier ausgegraut bzw. nur im grok-Profil ist; dass °_Agent anders recherchiert (normale Chat-Recherche/Web); wann Fork sinnvoll ist; dass Swarm bei °_Agent nutzbar ist (bei grok ausgegraut). Nutze Wiki-Konzepte falls vorhanden. Keine Ports, Pfade, Auth- oder Technik-Internals.";
-                        send(prompt);
+                        // Feste Festlegung: sofort, kostenlos, immer gleich —
+                        // kein Modellaufruf, keine Suche (Meldung 2026-10-03).
+                        const t = Date.now();
+                        setMessages((prev) => [
+                          ...prev,
+                          {
+                            id: `user-${t}`,
+                            role: "user",
+                            text: "Wie arbeite ich mit Glyph?",
+                            synthetic: true,
+                            at: t,
+                          },
+                          {
+                            id: `assistant-${t}-modes`,
+                            role: "assistant",
+                            text: isAgentProfile ? SEND_MODES_HELP_AGENT : SEND_MODES_HELP,
+                            streaming: false,
+                            protocolCollapsed: true,
+                            at: t + 1,
+                          },
+                        ]);
+                        requestAnimationFrame(() => scrollToBottom({ force: true }));
                       }}
                     >
-                      Chat-Modi
-                    </button>
-                    <button
-                      type="button"
-                      className="empty-starter-chip"
-                      onClick={() => {
-                        const prompt =
-                          "Erklär Apfel und Skills/Befehle auf Nutzerebene: Apfel über dem Senden-Knopf bei °_Agent — aus = allgemeine Suche/Web, an = nächste Frage sucht im Arbeits-Ordner/Vault, Treffer in der Leiste zum Anklicken (nicht automatisch alles in den Kontext), Wiki läuft ohnehin mit; höchstens Fachquellen wenn Ordner leer. Skills & Befehle: Menü „Befehle und Skills“ / Slash /, Auswahl fügt /name in den Composer (sendet nicht allein); Buch → Legende erklärt UI. Nutze Wiki-Konzepte falls vorhanden. Keine Ports, Pfade, Auth-, Endpoint- oder Technik-Internals.";
-                        send(prompt);
-                      }}
-                    >
-                      Apfel & Skills
+                      So arbeitest du
                     </button>
                   </div>
                 </div>
@@ -4246,8 +4556,8 @@ export default function App() {
                         <button
                           type="button"
                           className="msg-action-btn msg-bottom-btn"
-                          title="Antwort als Aufgabe übergeben"
-                          aria-label="Als Aufgabe übergeben"
+                          title="Als Fehlermeldung"
+                          aria-label="Als Fehlermeldung"
                           onClick={() => {
                             setTaskHandoff({
                               message: m,
@@ -4374,6 +4684,23 @@ export default function App() {
                               protocolCollapsed={Boolean(m.protocolCollapsed)}
                             />
                           ) : null}
+                          {m.chatFiles?.length ? (
+                            <div className="msg-file-links">
+                              {m.chatFiles.map((f) => (
+                                <button
+                                  key={f.id}
+                                  type="button"
+                                  className="msg-file-link"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setChatFile(f);
+                                  }}
+                                >
+                                  {f.title || f.name}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
                           {copyActions}
                           {m.trace?.sources?.vault ||
                           m.trace?.sources?.web ||
@@ -4423,7 +4750,11 @@ export default function App() {
 
         <footer className="composer composer--grok">
           {activeTask &&
-          (agent?.id === "_code" || agent?.id === "code" || activeTask.grant_id === "demo") ? (
+          (agent?.id === "_tick" ||
+          agent?.id === "tick" ||
+          agent?.id === "_code" ||
+          agent?.id === "code" ||
+          activeTask.grant_id === "demo") ? (
             <ActiveTaskBar
               task={activeTask}
               busy={busy}
@@ -4536,6 +4867,7 @@ export default function App() {
               overhead={meterOverhead}
               model={effectiveModel || contextInfo.model}
               estimated={displayEstimated}
+              pack={webSurface ? packMeter(chargedPack) : null}
               animateKey={sessionId || agent?.id || "new"}
               compactEnabled={
                 isGrokProfile &&
@@ -4545,13 +4877,6 @@ export default function App() {
               }
               onCompact={sendCompact}
             />
-            {isAgentProfile ? (
-              <VaultSearchToggle
-                on={vaultSearchOn}
-                disabled={!connected}
-                onToggle={toggleVaultSearch}
-              />
-            ) : null}
           </div>
           <div className="composer-box-anchor">
           <div
@@ -4698,6 +5023,9 @@ export default function App() {
                   placeholder={composerPlaceholder}
                   enterKeyHint={seat === "phone" ? "enter" : "send"}
                   onKeyDown={(e) => {
+                    // IME (CJK): Enter bestätigt einen Kandidaten, Escape bricht
+                    // die Komposition ab — beides darf den Chat nicht auslösen.
+                    if (e.nativeEvent?.isComposing || e.keyCode === 229) return;
                     if (slashOpen) {
                       if (e.key === "Escape") {
                         e.preventDefault();
@@ -4822,13 +5150,13 @@ export default function App() {
                   className={`composer-mode-btn${modeMenuOpen ? " is-open" : ""}`}
                   aria-haspopup="listbox"
                   aria-expanded={modeMenuOpen}
-                  aria-label={`Modus: ${composerActionLabel(sendAction)}`}
-                  title={COMPOSER_MODE_HELP[sendAction] || COMPOSER_MODE_HELP.chat}
+                  aria-label={`Modus: ${composerActionLabel(sendAction, agent?.id)}`}
+                  title={composerModeHint(sendAction, agent?.id)}
                   disabled={!connected}
                   onClick={() => setModeMenuOpen((o) => !o)}
                 >
                   <span className="composer-mode-label">
-                    {composerActionLabel(sendAction)}
+                    {composerActionLabel(sendAction, agent?.id)}
                   </span>
                   <span className="composer-mode-chevron" aria-hidden="true">
                     ▾
@@ -4840,39 +5168,11 @@ export default function App() {
                     role="listbox"
                     aria-label="Sendemodus"
                   >
-                    {[
-                      {
-                        id: "chat",
-                        label: "Chat",
-                        title: COMPOSER_MODE_HELP.chat,
-                      },
-                      {
-                        id: "deep-search",
-                        label: "Deep Search",
-                        title: COMPOSER_MODE_HELP["deep-search"],
-                      },
-                      {
-                        id: "fork",
-                        label: "Fork",
-                        title: COMPOSER_MODE_HELP.fork,
-                      },
-                      {
-                        id: "swarm",
-                        label: "Swarm",
-                        title: COMPOSER_MODE_HELP.swarm,
-                      },
-                    ].map((opt) => {
-                      const blocked =
-                        (opt.id === "deep-search" && !canDeepSearch) ||
-                        (opt.id === "swarm" && !canSwarmAction) ||
-                        (opt.id === "fork" && !canForkAction);
+                    {composerModeOptions(agent?.id, {
+                      deepSearch: canDeepSearch,
+                      swarm: canSwarmAction,
+                    }).map((opt) => {
                       const active = sendAction === opt.id;
-                      const blockedTitle =
-                        opt.id === "swarm"
-                          ? swarmBlockedReason
-                          : opt.id === "fork"
-                            ? forkBlockedReason
-                            : unavailableFor("Deep Search");
                       return (
                         <button
                           key={opt.id}
@@ -4881,11 +5181,10 @@ export default function App() {
                           aria-selected={active}
                           className={`composer-mode-option${
                             active ? " is-active" : ""
-                          }${blocked ? " is-blocked" : ""}`}
-                          title={blocked ? blockedTitle : opt.title}
-                          disabled={!connected || blocked}
+                          }`}
+                          title={composerModeHint(opt.id, agent?.id)}
+                          disabled={!connected}
                           onClick={() => {
-                            if (blocked) return;
                             setSendAction(opt.id);
                             setModeMenuOpen(false);
                           }}
@@ -4898,7 +5197,7 @@ export default function App() {
                 ) : null}
               </div>
               <span className="composer-mode-hint" aria-live="polite">
-                {COMPOSER_MODE_HELP[sendAction] || COMPOSER_MODE_HELP.chat}
+                {composerModeHint(sendAction, agent?.id)}
               </span>
               <button
                 type="button"
@@ -4934,6 +5233,10 @@ export default function App() {
                   // Keep composer focused so iOS doesn't drop the tap; click may not follow.
                   e.preventDefault();
                   sendPointerArmedRef.current = true;
+                  // Falls kein click folgt (iOS), nicht den nächsten Klick schlucken.
+                  window.setTimeout(() => {
+                    sendPointerArmedRef.current = false;
+                  }, 700);
                   onSendButton();
                 }}
                 onClick={() => {
@@ -4949,6 +5252,7 @@ export default function App() {
                     : !connected ||
                       cancelling ||
                       attachBusy ||
+                      (webSurface && packMeter(chargedPack).blocked && !isWorking) ||
                       (sendAction !== "fork" &&
                         !input.trim() &&
                         pendingAttachments.length === 0 &&
@@ -5062,6 +5366,7 @@ export default function App() {
             initialTab={legendTab}
             agentCommands={agentCommands}
             agentProfileId={agent?.id || ""}
+            agentCaps={agent?.capabilities || null}
             side={drawerSide}
             mode={drawerMode}
             onOpenLage={(which) => {
@@ -5079,14 +5384,20 @@ export default function App() {
         side="right"
         mode="overlay"
       />
+      <ChatFileDrawer
+        file={chatFile}
+        open={Boolean(chatFile)}
+        onClose={() => setChatFile(null)}
+      />
       <ExtensionsModal
         open={showExtensions}
         onClose={closeDrawer}
         side={drawerSide}
         mode={drawerMode}
+        intro={COMMANDS_HELP}
         skills={skills}
         agentCommands={agentCommands}
-        profileLabel={agentLabel}
+        internalHidden={Boolean(webSurface)}
         skillsHint={skillsHint}
         loading={skillsLoading}
         error={skillsError}
@@ -5149,6 +5460,8 @@ export default function App() {
               composerRef.current?.focus();
             }}
             canSeeActivity={canSeeActivity}
+            canSeeRoutines={canSeeRoutines}
+            ownerLabel={agent?.id === "_tick" ? "^_tick" : "den Kopf"}
           />
         </Suspense>
       ) : null}

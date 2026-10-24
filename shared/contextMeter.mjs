@@ -50,10 +50,12 @@ export const CONTEXT_WINDOWS = {
 /** Profile defaults when no model id is known. */
 export const PROFILE_DEFAULT_WINDOWS = {
   grok: 500_000,
-  claude: 1_000_000, // legacy alias → ^_Code
-  _code: 1_000_000,
+  claude: 1_000_000, // legacy alias → ^_tick
+  _code: 1_000_000, // legacy alias → ^_tick
   code: 1_000_000,
-  "glyph-agent": 256_000, // search chat; 1M is for ^_Code
+  _tick: 1_000_000,
+  tick: 1_000_000,
+  "glyph-agent": 256_000, // search chat; 1M is for ^_tick
 };
 
 /**
@@ -123,8 +125,16 @@ export function normalizeModelId(model) {
 export function modelProfileFamily(model) {
   const id = normalizeModelId(model);
   if (!id) return null;
-  if (id === "grok" || id === "claude" || id === "glyph-agent" || id === "_code" || id === "code") {
-    if (id === "claude" || id === "code") return "_code";
+  if (
+    id === "grok" ||
+    id === "claude" ||
+    id === "glyph-agent" ||
+    id === "_code" ||
+    id === "code" ||
+    id === "_tick" ||
+    id === "tick"
+  ) {
+    if (id === "claude" || id === "code" || id === "_tick" || id === "tick") return "_code";
     return id;
   }
   if (id.includes("grok")) return "grok";
@@ -152,10 +162,19 @@ export function isModelCompatibleWithProfile(model, profile) {
     .trim()
     .toLowerCase();
   if (!p) return true;
-  // Aliase: claude/code → _code
-  if (p === "claude" || p === "code" || p === "^_code") p = "_code";
+  // Aliase: claude/code/_tick → _code (ein gemeinsames LVL-Fenster)
+  if (
+    p === "claude" ||
+    p === "code" ||
+    p === "^_code" ||
+    p === "_tick" ||
+    p === "tick" ||
+    p === "^_tick"
+  ) {
+    p = "_code";
+  }
   const id = normalizeModelId(model);
-  // Direct DeepSeek is the hop for both °_Agent and ^_Code.
+  // Direct DeepSeek is the hop for both °_Agent and ^_tick.
   if (id.includes("deepseek")) return true;
   const fam = modelProfileFamily(model);
   if (!fam) return false;
@@ -176,7 +195,14 @@ export function resolveContextWindow(model, profile) {
     .trim()
     .toLowerCase();
   const profileKey =
-    pid === "claude" || pid === "code" || pid === "^_code" ? "_code" : pid;
+    pid === "claude" ||
+    pid === "code" ||
+    pid === "^_code" ||
+    pid === "_tick" ||
+    pid === "tick" ||
+    pid === "^_tick"
+      ? "_code"
+      : pid;
   // Lokales Modell zuerst: sein Fenster (16k) muss den 256k-Default von
   // °_Agent ueberstimmen. Cloud-Verhalten bleibt unveraendert.
   const localId = normalizeModelId(model);
@@ -334,6 +360,46 @@ export function formatLvlBarLabel(pct, estimated = false, opts = {}) {
  * }} opts
  * @returns {string}
  */
+/** Prepaid pack on glyph-ui.com: 2 € = 200c = 512k tokens. */
+export const TOKENS_PER_CENT = 2560;
+export const PACK_CENTS = 200;
+export const PACK_TOKENS = TOKENS_PER_CENT * PACK_CENTS;
+
+/**
+ * Web bar: rest cents and tokens used against the pack.
+ * `200c · 0/512k` at full balance. `0c · 512k/512k` when empty.
+ * Warn from 80 % used. Block at 512k.
+ * @param {number} consumed
+ */
+/**
+ * Tokens that count against the prepaid pack.
+ * No Aufladen grant → 0, even if a browser remembered an old number.
+ * @param {{ source?: string, opened?: boolean } | null | undefined} access
+ * @param {number} reported
+ */
+export function packCharge(access, reported) {
+  if (access?.source !== "aufladen" || access?.opened !== true) return 0;
+  const raw = Number(reported);
+  return Number.isFinite(raw) && raw > 0 ? raw : 0;
+}
+
+export function packMeter(consumed) {
+  const raw = Number(consumed);
+  const used = Number.isFinite(raw) && raw > 0 ? raw : 0;
+  const capped = Math.min(PACK_TOKENS, used);
+  const remaining = PACK_TOKENS - capped;
+  const centsLeft = Math.round(remaining / TOKENS_PER_CENT);
+  const fill = capped / PACK_TOKENS;
+  return {
+    centsLeft,
+    consumed: capped,
+    label: `${centsLeft}c · ${formatTokenCount(capped)}/${formatTokenCount(PACK_TOKENS)}`,
+    fill,
+    warn: fill >= 0.8,
+    blocked: used >= PACK_TOKENS,
+  };
+}
+
 export function formatContextTooltip(opts) {
   const used = Number(opts?.used) || 0;
   const win = Number(opts?.window) || 0;

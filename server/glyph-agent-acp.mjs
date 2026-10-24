@@ -7,7 +7,8 @@
  *
  * Modi (Env GLYPH_AGENT_MODE):
  *   agent (Default) — Web + Cloud-Antwort; VaultFind nur bei UI-Toggle
- *   code            — ^_Code: Read/Write/Shell, Genehmigung via ACP; Modell aus Bindings
+ *   code            — ^_Code (abgelöst): Read/Write/Shell, Genehmigung via ACP
+ *   tick            — ^_tick: Code-Fähigkeiten + Routine-Ordner/Plan & Aktivität
  *
  * Protokoll: ACP v1 über NDJSON-Stdio (acp.ndJsonStream).
  * Copyright (c) 2026 Alexander Hubert · SPDX-License-Identifier: MIT
@@ -31,10 +32,12 @@ const AGENT_URL = process.env.GLYPH_AGENT_URL || "http://127.0.0.1:18899";
 // Server-seitig greift zusätzlich CODE_CHAT_TIMEOUT/CHAT_TIMEOUT pro LLM-Call.
 const PROTOCOL_VERSION = acp.PROTOCOL_VERSION;
 const AGENT_MODE = String(process.env.GLYPH_AGENT_MODE || "agent").toLowerCase();
+// TICK (^_tick) erbt CODE (^_Code): dieselbe Tool-/Freigabeschicht der Engine.
+const IS_TICK = AGENT_MODE === "tick";
+const IS_CODE = AGENT_MODE === "code" || IS_TICK;
 const AGENT_NAME =
   process.env.GLYPH_AGENT_ACP_NAME ||
-  (AGENT_MODE === "code" ? "^_Code" : "°_Agent");
-const IS_CODE = AGENT_MODE === "code";
+  (IS_TICK ? "^_tick" : IS_CODE ? "^_Code" : "°_Agent");
 const TIMEOUT_MS = Number(
   process.env.GLYPH_AGENT_TIMEOUT || (IS_CODE ? 480000 : 300000),
 );
@@ -53,7 +56,7 @@ const sessions = new Map();
 const cancelGate = createSessionCancelGate();
 let sessionCounter = 0;
 const newSessionId = () =>
-  `${IS_CODE ? "code" : "glyph-agent"}-${++sessionCounter}`;
+  `${IS_TICK ? "tick" : IS_CODE ? "code" : "glyph-agent"}-${++sessionCounter}`;
 
 async function streamChunks(text, client, sessionId, chunkSize = 400) {
   // Sequential agent_message_chunk stream (schema-valid ContentChunk only).
@@ -133,6 +136,10 @@ const STEP_MARKERS = {
   WikiApply: ["WriteNote", "wendet Wiki-Änderung an (alias)"],
   WikiStatus: ["WikiStatus", "Wiki-Status (agent-digest)"],
   WebSearch: ["SearchWeb", "suche im Internet (Exa, grob)"],
+  // Suchbrücke (glyph-agent core/query_bridge.py): macht aus einer Rückfrage
+  // („wie oft muss ich das tun?") eigenständige Suchbegriffe, BEVOR Exa/TinyFish
+  // sie sehen — erscheint deshalb VOR den SearchWeb-Zeilen.
+  SearchBridge: ["Query", "formuliert Suchbegriffe aus dem Verlauf"],
   ExtractUrl: ["Fetch", "rufe konkrete URL ab (TinyFish, fein)"],
   FetchUrl: ["Fetch", "rufe konkrete URL ab (TinyFish, fein)"],
   BrowseUrl: ["Browse", "URL-Zusammenfassung (TinyFish)"],
@@ -142,7 +149,7 @@ const STEP_MARKERS = {
   MessageSend: ["MessageSend", "sendet Nachricht (openclaw)"],
   OpenRouter: [
     "Think",
-    IS_CODE ? "^_Code" : "Cloud-Denker",
+    IS_TICK ? "^_tick" : IS_CODE ? "^_Code" : "Cloud-Denker",
   ],
   ReadNote: ["ReadNote", "liest Notiz aus dem Vault"],
   Summarize: ["Summarize", "fasst Notiz zusammen"],
@@ -155,6 +162,16 @@ const STEP_MARKERS = {
   SearchReplace: ["SearchReplace", "ersetzt Text in Datei (1 Treffer)"],
   WriteFile: ["WriteFile", "schreibt Datei (Diff+Backup)"],
   RunCommand: ["RunCommand", "Shell (Whitelist)"],
+  // ^_tick: Routine-Ordner und Plan & Aktivität sichtbar beschriften.
+  RoutineOverview: ["Routine", "sieht die Lage (Zähler + Ordner)"],
+  RoutineJobs: ["Routine", "liest den Job-Ordner (Daily/Inbox/Blocked)"],
+  RoutineRead: ["Routine", "liest einen Job"],
+  RoutineJobWrite: ["Routine", "legt einen Job an (nie überschreiben)"],
+  RoutineMove: ["Routine", "verschiebt einen Job (Done/Blocked)"],
+  RoutineLog: ["Routine", "schreibt ins Laufprotokoll"],
+  RoutinePlan: ["Routine", "liest Plan & Aktivität"],
+  RoutineSet: ["Routine", "legt ein To-do an oder ändert es"],
+  RoutineRun: ["Routine", "löst ein To-do jetzt aus"],
 };
 
 function stepLabel(action, detail = "") {
@@ -167,7 +184,7 @@ function stepLabel(action, detail = "") {
 
 function renderStepStart(action, detail) {
   if (action === "OpenRouter") {
-    return formatThinkStep(detail, { isCode: IS_CODE });
+    return formatThinkStep(detail, { isCode: IS_CODE, isTick: IS_TICK });
   }
   const m = ["VaultFind", "VaultRecall", "VaultSearch", "WikiSearch"].includes(action)
     ? resolveStepDisplay(action, detail)
@@ -219,7 +236,7 @@ app.onRequest(acp.methods.agent.initialize, async () => ({
   agentInfo: {
     name: AGENT_NAME,
     title: AGENT_NAME,
-    version: IS_CODE ? "0.3.0-code" : "0.2.1",
+    version: IS_TICK ? "0.4.0-tick" : IS_CODE ? "0.3.0-code" : "0.2.1",
   },
 }));
 
@@ -385,6 +402,27 @@ async function streamChat(body, client, sessionId, signal, onActivity) {
         } else {
           const line = renderStepEnd(action, status, detail);
           await streamStepChunk(`⏹STEP⏹${line}`, client, sessionId);
+        }
+      } else if (type === "chat_file") {
+        const payload = JSON.stringify({
+          title: ev.title || "Datei",
+          name: ev.name || "Datei.pdf",
+          mime: ev.mime || "application/pdf",
+          text: typeof ev.text === "string" ? ev.text : "",
+          data: ev.data || "",
+        });
+        if (ev.data) {
+          try {
+            await client.notify(acp.methods.client.session.update, {
+              sessionId,
+              update: {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: `⏺FILE⏺${payload}` },
+              },
+            });
+          } catch {
+            /* Datei fehlt im Chat, Antwort darf trotzdem ankommen */
+          }
         }
       } else if (type === "draft") {
         // Zwischen-LLM → Protokoll (nie Primärspur). DSML nie in die Lesespur.
@@ -574,7 +612,7 @@ app.onRequest(acp.methods.agent.session.prompt, async (ctx) => {
       attachments: built.attachments,
       // OpenAI-style image_url parts (data: URLs) for vision models
       images: Array.isArray(built.images) ? built.images : [],
-      mode: IS_CODE ? "code" : "agent",
+      mode: IS_TICK ? "tick" : IS_CODE ? "code" : "agent",
       // Chat-Verlauf → glyph-agent (ohne Historie startet jeder Turn bei null)
       history: priorHistory,
       // Interactive °_Agent: Vault-Suche nur bei Toggle. Fehlt _meta → aus
@@ -590,6 +628,22 @@ app.onRequest(acp.methods.agent.session.prompt, async (ctx) => {
       abortController.signal,
       () => idle.arm(),
     );
+    let usedIn = 0;
+    let usedOut = 0;
+    const addUsage = (done) => {
+      const u = done?.usage;
+      if (!u || typeof u !== "object") return;
+      const inp = Number(u.input) || 0;
+      const out = Number(u.output) || 0;
+      const total = Number(u.total) || 0;
+      if (inp > 0 || out > 0) {
+        usedIn += inp;
+        usedOut += out;
+      } else if (total > 0) {
+        usedIn += total;
+      }
+    };
+    addUsage(final);
 
     // CODE: Genehmigungsschleife — Write/Shell brauchen Grant (kein Session-Always).
     let guard = 0;
@@ -649,7 +703,7 @@ app.onRequest(acp.methods.agent.session.prompt, async (ctx) => {
       const resume = await streamChat(
         {
           message: "",
-          mode: "code",
+          mode: IS_TICK ? "tick" : "code",
           resume_token: final.resume_token,
           allow_pending: allowed,
           grant_scope: allowed ? decision.scope || "once" : undefined,
@@ -673,6 +727,7 @@ app.onRequest(acp.methods.agent.session.prompt, async (ctx) => {
       stepBlocks = stepBlocks.concat(resume.stepBlocks || []);
       if (resume.trace) trace = resume.trace;
       final = resume.final;
+      addUsage(final);
       // Hard-error nach Allow: Schleife beenden
       if (final?.hard_error) break;
     }
@@ -697,7 +752,11 @@ app.onRequest(acp.methods.agent.session.prompt, async (ctx) => {
     if (final?.used_model) meta.used_model = final.used_model;
     if (final?.mode) meta.mode = final.mode;
     if (final?.hard_error) {
-      meta.hardError = String(final.error || final.answer || "Code-Aktion fehlgeschlagen");
+      meta.hardError = String(
+        final.error ||
+          final.answer ||
+          (IS_TICK ? "Routine-Aktion fehlgeschlagen" : "Code-Aktion fehlgeschlagen"),
+      );
     }
     await notifyAssistantMeta(client, sessionId, meta);
 
@@ -705,7 +764,19 @@ app.onRequest(acp.methods.agent.session.prompt, async (ctx) => {
     if (abortController.signal.aborted && !timedOut) {
       return { stopReason: "cancelled" };
     }
-    return { stopReason: "end_turn" };
+    const totalTokens = usedIn + usedOut;
+    return {
+      stopReason: "end_turn",
+      ...(totalTokens > 0
+        ? {
+            usage: {
+              totalTokens,
+              inputTokens: usedIn,
+              outputTokens: usedOut,
+            },
+          }
+        : {}),
+    };
   } catch (err) {
     if (err.name === "AbortError" || abortController.signal.aborted) {
       if (timedOut) {

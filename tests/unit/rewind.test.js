@@ -30,6 +30,23 @@ describe("rewindPointsFromMessages", () => {
     assert.equal(pts[1].text, "second question here");
     assert.match(pts[1].preview, /second/);
   });
+
+  it("ignoriert lokale Starter-Chips (synthetic)", () => {
+    const pts = rewindPointsFromMessages([
+      { role: "user", id: "starter", text: "Was ist Glyph?", synthetic: true },
+      { role: "user", id: "u1", text: "echte Frage" },
+      { role: "user", id: "starter2", text: "So arbeitest du", synthetic: true },
+      { role: "user", id: "u2", text: "zweite Frage" },
+    ]);
+    assert.deepEqual(
+      pts.map((p) => p.id),
+      ["u1", "u2"],
+    );
+    assert.deepEqual(
+      pts.map((p) => p.index),
+      [0, 1],
+    );
+  });
 });
 
 describe("sliceMessagesBeforeUser", () => {

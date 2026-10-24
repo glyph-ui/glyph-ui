@@ -43,3 +43,21 @@ describe("SeatHub", () => {
     assert.equal(hub.findBySession("ccc"), null);
   });
 });
+
+describe("SeatHub cleanup", () => {
+  it("peek legt keinen Bridge an, remove liefert ihn zurück", () => {
+    let n = 0;
+    const hub = new SeatHub((seat) => {
+      n += 1;
+      return { seat, sessionId: null };
+    });
+    assert.equal(hub.peek("web:abc"), null);
+    assert.equal(n, 0);
+    const b = hub.get("web:abc");
+    assert.equal(hub.peek("web:abc"), b);
+    assert.equal(hub.remove("web:abc"), b);
+    assert.equal(hub.peek("web:abc"), null);
+    assert.equal(hub.remove("web:abc"), null);
+    assert.deepEqual(hub.keys(), []);
+  });
+});

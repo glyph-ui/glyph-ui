@@ -4,6 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SideDrawer } from "./SideDrawer.jsx";
+import { composerModeOptions } from "../../../shared/composerActions.mjs";
 
 const COMMAND_LEGEND = [
   {
@@ -95,9 +96,9 @@ const COMMAND_LEGEND = [
         desc: "Rahmenloser runder Knopf: idle = goldener Pfeil nach oben (senden; Handy: erster Tap). Während der Arbeit = pochendes goldenes Stopp-Quadrat, bei Hänger rot — Klick bricht ab (ACP bzw. Fetch-Abbruch). Text während der Arbeit = Queue/neue Suche. Kritische Tools laufen sicher zu Ende.",
       },
       {
-        cmd: "Chat | Deep Search | Fork | Swarm",
+        cmd: "Search | Deep Search | Fork | Swarm",
         need: "empfohlen",
-        desc: "Chat = Nachricht. Deep Search = Grok /deep-research (sonst ausgegraut). Fork = Session branchen. Swarm = °_Agent/^_Code Planer+Suche+Synthese.",
+        desc: "Search = Nachricht (Glyph sucht zuerst). Deep Search = Grok /deep-research (sonst ausgegraut). Fork = Session branchen. Swarm = °_Agent/^_tick Planer+Suche+Synthese.",
       },
       {
         cmd: "Kette · verbunden / offline",
@@ -208,6 +209,8 @@ const COMMAND_LEGEND = [
   },
 ];
 
+const MODE_NAMES = ["Deep Search", "Fork", "Swarm", "Vault"];
+
 const COMMAND_HINTS = {
   group: "Hinweis",
   items: [
@@ -255,7 +258,7 @@ const SHORT_HANDBOOK = [
     title: "Was Glyph ist",
     body: [
       "**Glyph ist keine KI** — nur eine Browser-Hülle für Agenten (ACP).",
-      "Du bringst Grok Build / ^_Code / °_Agent mit; Glyph zeigt Chat, Tools und Status.",
+      "Du bringst Grok Build / ^_tick / °_Agent mit; Glyph zeigt Chat, Tools und Status.",
       "Für Leute, die lokal arbeiten und wissen, was sie tun (z. B. Mac Mini).",
     ],
   },
@@ -266,7 +269,7 @@ const SHORT_HANDBOOK = [
       "**Mac & Windows:** Node.js 22+ · `git clone` · `npm install` · `npm run build` · `npm start`.",
       "Browser: **http://127.0.0.1:5174** (Prod). Dev: `npm run dev` → UI :5173, Bridge :5174.",
       "macOS-Extras (LaunchAgent, Dock) sind optional — unter Windows weglassen.",
-      "**Graph**: Bind prüfen — Grok Build = `grok login`. Agent/Code = Direct in der Legende.",
+      "**Graph**: Bind prüfen — Grok Build = `grok login`. Agent/Tick = Direct in der Legende.",
       "Profil wählen (Header) → **Kette** verbinden → chatten.",
     ],
   },
@@ -286,9 +289,9 @@ const SHORT_HANDBOOK = [
     body: [
       "**Graph** (Leiste): folgt Theme (Dunkel pechschwarz / Hell Papier). Köpfe um Glyph; Vaults/Roots als Punkte. Klick → Legende.",
       "**Grok Build:** OAuth im Terminal (`grok login`). Glyph speichert keinen OAuth-Token — nur Status.",
-      "**^_Code / °_Agent:** Header-Pille oder Graph-Kopf → Blatt Anbindung: Zeilen Direct / Router (live/cut · Host), Bearbeiten öffnet Host+Key. Modelle darunter. Ohne Slash = Direct (`deepseek-v4-flash-vision-exp`), mit Slash = Router (OpenRouter `deepseek/…` oder Orca `z-ai/…`). Router-Host: `https://openrouter.ai/api/v1` oder `https://api.orcarouter.ai/v1`.",
+      "**^_tick / °_Agent:** Header-Pille oder Graph-Kopf → Blatt Anbindung: Zeilen Direct / Router (live/cut · Host), Bearbeiten öffnet Host+Key. Modelle darunter. Ohne Slash = Direct (`deepseek-v4-flash-vision-exp`), mit Slash = Router (OpenRouter `deepseek/…` oder Orca `z-ai/…`). Router-Host: `https://openrouter.ai/api/v1` oder `https://api.orcarouter.ai/v1`.",
       "**Vaults (Kabelsalat):** Obsidian an °_Agent — Pfad / Name / `obsidian://` · r · r+w · 🔒 · Kabel an/ab. SoT: `~/.glyph/vaults.json`.",
-      "**Workspaces (Kabelsalat):** Code-Roots an ^_Code — Pfad · r · r+w · 🔒. `r+w` = beschreibbar, nicht Auto-Write. SoT: `~/.glyph/workspaces.json`.",
+      "**Workspaces (Kabelsalat):** Code-Roots an ^_tick — Pfad · r · r+w · 🔒. `r+w` = beschreibbar, nicht Auto-Write. SoT: `~/.glyph/workspaces.json`.",
       "**An/Ab** = Kabel durchtrennen, Eintrag bleibt.",
       "**Voice:** optional `XAI_API_KEY` (console.x.ai).",
       "Gespeichert lokal: `~/.glyph-ui/bindings.json` (nie committen).",
@@ -300,10 +303,10 @@ const SHORT_HANDBOOK = [
     body: [
       "Links: Kalender, Lupe, **Graph**, Neuer Chat, **Befehle und Skills**, Wiki, Workspace, Theme, UI neu laden, **Buch** (Handbuch · UI-Legende). Kalender & Skills = **Seitenpanel** (Chat bleibt); **Graph** = Vollfläche.",
       "Header links: Glyph #0.9.0 · Term · ACP. cwd nicht in der Zeile (Tooltip / Workspace-Button). Rechts: Profil · Modell-Pille (eingesetztes Modell, nicht Primary→Reserve) · Kette.",
-      "glyph-ui.com: Header Stift · Befehle · Theme · Schloss · **UI neu laden**. Keine Kette (Beenden).",
+      "glyph-ui.com: Header Stift · Befehle · Theme · Aufladen · **UI neu laden**. Keine Kette (Beenden).",
       "Mitte: Chat-Verlauf (Markdown).",
       "**Quellen & Anhänge = Chips (Regel):** anklickbare Knöpfe, nie Fließtext-Links — Quellenleiste mit Kürzel **WEB**/**PDF**/**MD**/**OBS** + Titel, im Fließtext kompakt ohne Kürzel (Domain/Titel). Klick öffnet die Quelle im Seitenfenster (gesperrte Webseiten als Textansicht, **Browser** = Original).",
-      "Unten: **Arbeitsleiste** (Plan · Ordner · Aktiver Task) über der LVL-Leiste · Composer · **Mikro** · Chat | Deep Search | Fork | Swarm · **Senden-Pfeil** (golden, rahmenlos). °_Agent: Pixel-Apfel über dem Senden-Knopf = Ordner-Suche.",
+      "Unten: **Arbeitsleiste** (Plan · Ordner · Aktiver Task) über der LVL-Leiste · Composer · **Mikro** · Sendemenü (nur wählbare Modi) · **Senden-Pfeil** (golden, rahmenlos). °_Agent: Search, Vault, Swarm. Vault = Ordner-Suche.",
     ],
   },
   {
@@ -325,12 +328,13 @@ const SHORT_HANDBOOK = [
     id: "composer",
     title: "Schreiben & senden",
     rows: [
-      ["Chat", "Normale Nachricht an den aktiven Agenten"],
-      ["Apfel", "°_Agent: über dem Senden-Knopf. Wiki, TinyFish und Exa laufen immer. An = Arbeits-Vault beim Senden, Composer leer, Query in der Leiste. × bricht ab. Vault leer → KomNet, sonst DGUV. Aus = allgemeine Suche, Internet, soziale Netze."],
-      ["Treffer", "Arbeitsleiste über LVL, nicht im Chat. Start aus; nur angeklickte Arbeits-Vault-Treffer gehen in den Kontext. Web mit Apfel: KomNet/DGUV."],
+      ["Chat", "Normale Nachricht an Grok oder ^_Code"],
+      ["Search", "°_Agent: normale Frage — Glyph sucht zuerst (Wissen, Web), antwortet dann. Dieselbe Sende-Aktion wie Chat."],
+      ["Vault", "°_Agent: Modus im Sendemenü, neben Search und Swarm. Wiki, TinyFish und Exa laufen immer. An = Arbeits-Vault beim Senden, Composer leer, Query in der Leiste. × bricht ab. Vault leer → KomNet, sonst DGUV. Search = allgemeine Suche, Internet, soziale Netze. Deep Search und Fork fehlen hier, sie gehören zu anderen Köpfen."],
+      ["Treffer", "Arbeitsleiste über LVL, nicht im Chat. Start aus; nur angeklickte Arbeits-Vault-Treffer gehen in den Kontext. Web im Modus Vault: KomNet/DGUV."],
       ["Deep Search", "Grok: strukturierte Multi-Quellen-Recherche. Andere Köpfe ausgegraut."],
       ["Fork", "Session branchen; Text = optionale Directive"],
-      ["Swarm", "°_Agent / ^_Code: Planer, Suche, Synthese. Grok ausgegraut."],
+      ["Swarm", "°_Agent / ^_tick: Planer, Suche, Synthese. Grok ausgegraut."],
       ["↑", "Leerer Composer: Prompt-History"],
       ["Rewind", "Esc Esc · /rewind · ↺ an der Nutzer-Nachricht. Dateien bleiben."],
       ["Enter", "Desk: senden · Handy: Tastatur = Zeile, Senden-Knopf (erster Tap)"],
@@ -398,7 +402,7 @@ const SHORT_HANDBOOK = [
   },
   {
     id: "grant",
-    title: "Freigabe (^_Code)",
+    title: "Freigabe (^_tick)",
     body: [
       "`r+w` heißt Workspace beschreibbar — nicht dauerhaft schreiben ohne Nachfrage.",
       "Dialog: **Einmal** · **Für Auftrag** · **Für Task**. Kein „immer“, kein „Für diese Session“. Elevated Shell nur Einmal/Ablehnen.",
@@ -459,11 +463,11 @@ function CommandLegend({
   /** @deprecated Live-Katalog nur noch im Seitenpanel „Befehle und Skills“; prop bleibt für Call-Sites. */
   agentCommands = [],
   agentProfileId = "",
+  agentCaps = null,
   onOpenLage,
   side = "right",
   mode = "overlay",
 }) {
-  void agentProfileId;
   void onOpenLage;
   void agentCommands;
   const [query, setQuery] = useState("");
@@ -478,10 +482,38 @@ function CommandLegend({
   }, [open, initialTab]);
 
   // Nur UI-Legende + Hinweise. Live Skills/Agent-Commands → Seitenpanel „Befehle und Skills“.
-  const commandGroups = useMemo(
-    () => [...COMMAND_LEGEND, COMMAND_HINTS],
-    [],
-  );
+  /**
+   * Sendemodi des aktiven Kopfes — aus DERSELBEN Quelle wie das Sendemenü
+   * (`shared/composerActions.mjs`). So kann die Hilfe nicht mehr behaupten,
+   * es gäbe „Deep Search", während der Kopf (°_Agent) es gar nicht anbietet.
+   * Beispiel: grok → Chat | Deep Search | Fork · °_Agent → Search | Vault | Swarm
+   */
+  const modeLabels = useMemo(() => {
+    const opts = composerModeOptions(agentProfileId, agentCaps || null);
+    return opts.map((o) => o.label);
+  }, [agentProfileId, agentCaps]);
+
+  const commandGroups = useMemo(() => {
+    const vorhanden = new Set(modeLabels);
+    const modiText = modeLabels.join(" | ");
+    return [...COMMAND_LEGEND, COMMAND_HINTS].map((g) => ({
+      ...g,
+      items: g.items
+        .map((it) => {
+          // Sammelzeile „Search | Deep Search | Fork | Swarm" dynamisch setzen
+          if (it.cmd.startsWith("Search | ")) {
+            return {
+              ...it,
+              cmd: modiText,
+              desc: `Sendemodi dieses Kopfes: ${modiText}. Was der Kopf nicht anbietet, steht hier nicht — die Auswahl hängt am Kopf.`,
+            };
+          }
+          return it;
+        })
+        // Einzelzeilen zu Modi ausblenden, die der Kopf nicht kann
+        .filter((it) => !(MODE_NAMES.includes(it.cmd) && !vorhanden.has(it.cmd))),
+    }));
+  }, [modeLabels]);
 
   const filteredCommands = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -502,8 +534,21 @@ function CommandLegend({
 
   const filteredHandbook = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return SHORT_HANDBOOK;
-    return SHORT_HANDBOOK.filter((sec) => {
+    // Zeilen zu Sendemodi ausblenden, die dieser Kopf nicht anbietet.
+    const vorhanden = new Set(modeLabels);
+    const MODE_ROWS = ["Chat", "Search", "Deep Search", "Fork", "Swarm", "Vault"];
+    const kopfFest = SHORT_HANDBOOK.map((sec) =>
+      Array.isArray(sec.rows)
+        ? {
+            ...sec,
+            rows: sec.rows.filter(
+              ([k]) => !(MODE_ROWS.includes(k) && !vorhanden.has(k)),
+            ),
+          }
+        : sec,
+    );
+    if (!q) return kopfFest;
+    return kopfFest.filter((sec) => {
       const hay = [
         sec.title,
         ...(sec.body || []),
@@ -513,7 +558,7 @@ function CommandLegend({
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [query]);
+  }, [query, modeLabels]);
 
   return (
     <SideDrawer

@@ -1,5 +1,5 @@
 /**
- * ^_Code Freigabe-Dialog: Einmal / Auftrag / Task.
+ * ^_tick Freigabe-Dialog: Einmal / Auftrag / Task.
  * Copyright (c) 2026 Alexander Hubert — MIT License
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -127,7 +127,7 @@ export function PermissionDialog({ req, onRespond }) {
         <h2 id="permission-modal-title">Freigabe · {req.title}</h2>
         <p className="permission-modal-kind">
           {kindLine}
-          {" · "}Profil ^_Code
+          {" · "}Profil ^_tick
         </p>
         {hint ? <p className="permission-modal-hint">{hint}</p> : null}
         {req.preview ? (

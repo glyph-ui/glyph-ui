@@ -11,7 +11,7 @@ import { AnbindungSheet } from "./AnbindungSheet.jsx";
 const HEAD_ROWS = [
   { id: "grok", label: "Grok Build", write: true },
   { id: "agent", label: "°_Agent", write: true },
-  { id: "code", label: "^_Code", write: true },
+  { id: "code", label: "^_tick", write: true },
 ];
 
 function modeWordOf(binds) {

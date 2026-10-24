@@ -2,13 +2,24 @@
  * SourceViewer — zitierte Quelle im Seitenfenster (Vault-PDF/Notiz oder Web).
  *
  * PDF: nativer Viewer + Begriffsuche (Textlayer via pdfjs). Web: iframe,
- * Fuß Browser + Zurück. Vault: Obsidian im Kopf. Chat bleibt, Esc/Zurück.
+ * Fuß Browser (+ Textansicht). Vault: Obsidian im Kopf. Chat bleibt, Esc/×.
  *
  * Copyright (c) 2026 Alexander Hubert · SPDX-License-Identifier: MIT
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SideDrawer } from "./SideDrawer.jsx";
 import { MarkdownBody } from "./MarkdownBody.jsx";
+import {
+  IconChevronLeft,
+  IconChevronRight,
+  IconCheck,
+  IconClose,
+  IconCollapse,
+  IconDocument,
+  IconDownload,
+  IconExpand,
+  IconGlobe,
+} from "./icons.jsx";
 import {
   obsidianUrl,
   shortLinkLabel,
@@ -20,6 +31,7 @@ import {
 import { findInPages, findMatchOffsets, snippetAround } from "../utils/sourceFind.js";
 import { extractPdfPages } from "../utils/pdfText.js";
 import { openWebUrl } from "../utils/sourceOpen.js";
+import { PdfSheet } from "./PdfSheet.jsx";
 
 function SourceFindBar({ query, onQuery, hits, index, onIndex, disabled, emptyHint }) {
   const n = hits.length;
@@ -58,16 +70,23 @@ function SourceFindBar({ query, onQuery, hits, index, onIndex, disabled, emptyHi
         disabled={!n}
         onClick={() => onIndex((index - 1 + n) % n)}
         aria-label="Vorheriger Treffer"
+        title="Vorheriger Treffer"
       >
-        Vor
+        <IconChevronLeft size={16} />
       </button>
       <button
         type="submit"
         className="ghost source-find-nav"
         disabled={!n}
+        onClick={(e) => {
+          // Submit-Button: Enter im Feld springt weiter; Klick ebenso.
+          e.preventDefault();
+          if (n) onIndex((index + 1) % n);
+        }}
         aria-label="Nächster Treffer"
+        title="Nächster Treffer"
       >
-        Weiter
+        <IconChevronRight size={16} />
       </button>
     </form>
   );
@@ -84,7 +103,19 @@ function SourceViewer({ file, open, onClose, side = "right", mode = "overlay" })
   const [webReload, setWebReload] = useState(0);
   const [query, setQuery] = useState("");
   const [hitIndex, setHitIndex] = useState(0);
-  const [frameSrc, setFrameSrc] = useState("");
+  const [pdfZoom, setPdfZoom] = useState(100);
+  const [saveErr, setSaveErr] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [maxW, setMaxW] = useState(() => {
+    try {
+      if (typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches) {
+        return false;
+      }
+      return sessionStorage.getItem("glyph-source-max") === "1";
+    } catch {
+      return false;
+    }
+  });
   const [drawerW, setDrawerW] = useState(() => {
     try {
       if (typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches) {
@@ -115,7 +146,9 @@ function SourceViewer({ file, open, onClose, side = "right", mode = "overlay" })
     setTextAnsicht(false);
     setQuery("");
     setHitIndex(0);
-    setFrameSrc(fileUrl);
+    setPdfZoom(100);
+    setSaveErr("");
+    setSaved(false);
   }, [open, path, url, fileUrl]);
 
   // Web: verbietet die Seite die Einbettung (X-Frame-Options / frame-ancestors),
@@ -196,12 +229,9 @@ function SourceViewer({ file, open, onClose, side = "right", mode = "overlay" })
     setHitIndex(0);
   }, [query, path, url]);
 
-  useEffect(() => {
-    if (!isPdf || !pdfHits.length || !fileUrl) return;
-    const page = pdfHits[Math.min(hitIndex, pdfHits.length - 1)]?.page;
-    if (!page) return;
-    setFrameSrc(`${fileUrl}#page=${page}`);
-  }, [isPdf, pdfHits, hitIndex, fileUrl]);
+  const pdfFocus = isPdf && pdfHits.length
+    ? pdfHits[Math.min(hitIndex, pdfHits.length - 1)]?.page || 0
+    : 0;
 
   useEffect(() => {
     if (isPdf || isWeb || !query.trim() || !mdHits.length || !textRef.current) return;
@@ -268,8 +298,40 @@ function SourceViewer({ file, open, onClose, side = "right", mode = "overlay" })
   const pdfLoading = isPdf && pdfPages === null && !pdfErr;
   const findDisabled = isPdf && (pdfNoText || pdfErr || pdfLoading);
 
+  // Herunterladen für beide Vault-Arten über denselben Proxy-URL: PDF als
+  // Blob-Download (application/pdf), Notiz als Textdatei. `a.download` regelt
+  // den Dateinamen; der Browser legt die Datei in den Downloads-Ordner.
+  const saveSource = useCallback(async () => {
+    if (!fileUrl) return;
+    setSaveErr("");
+    setSaved(false);
+    try {
+      const r = await fetch(fileUrl);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const blob = await r.blob();
+      let name = path.split(/[/\\]/).pop() || "dokument";
+      const lower = name.toLowerCase();
+      if (isPdf && !lower.endsWith(".pdf")) name = `${name}.pdf`;
+      if (!isPdf && !lower.endsWith(".md")) name = `${name}.md`;
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2400);
+    } catch {
+      setSaveErr("Herunterladen fehlgeschlagen");
+    }
+  }, [fileUrl, isPdf, path]);
+
   const onResizePointerDown = useCallback((e) => {
     if (e.button !== 0) return;
+    // Ziehen verlässt die volle Breite — Startpunkt ist die aktuelle Breite.
+    setMaxW(false);
     const panel = e.currentTarget.parentElement;
     if (!panel) return;
     const startX = e.clientX;
@@ -309,31 +371,73 @@ function SourceViewer({ file, open, onClose, side = "right", mode = "overlay" })
       kicker={kicker}
       side={side}
       mode={mode}
-      className="source-viewer"
+      className={`source-viewer${maxW ? " source-viewer--wide" : ""}`}
       ariaLabel="Quelldatei"
-      closeLabel={isWeb ? "" : "Zurück"}
+      closeLabel=""
       style={
-        drawerW
-          ? { width: `${drawerW}px`, maxWidth: "calc(100% - 20px)" }
-          : undefined
+        maxW
+          ? undefined
+          : drawerW
+            ? { width: `${drawerW}px`, maxWidth: "calc(100% - 20px)" }
+            : undefined
       }
       gutter={
         <div
           className="source-resize"
           role="separator"
           aria-orientation="vertical"
-          aria-label="Fensterbreite"
+          aria-label="Fensterbreite — ziehen oder Doppelklick für volle Breite"
+          title="Ziehen ändert die Breite · Doppelklick = volle Breite"
           onPointerDown={onResizePointerDown}
+          onDoubleClick={() => setMaxW(true)}
         />
       }
       headExtra={
-        ext ? (
-          <div className="source-open-row">
-            <a className="ghost source-open-ext" href={ext} title="In Obsidian öffnen">
+        <div className="source-open-row">
+          {!isWeb ? (
+            <button
+              type="button"
+              className={`source-icon-btn${saved ? " is-done" : ""}`}
+              onClick={saveSource}
+              aria-label="Datei herunterladen"
+              title="Datei herunterladen (Downloads-Ordner)"
+            >
+              {saved ? <IconCheck size={16} /> : <IconDownload size={17} />}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="source-icon-btn source-max-btn"
+            onClick={() => setMaxW((v) => !v)}
+            aria-pressed={maxW}
+            aria-label={maxW ? "Zurück zur Fensterbreite" : "Volle Breite"}
+            title={
+              maxW
+                ? "Zurück zur Fensterbreite"
+                : "Volle Breite (auch: Doppelklick auf die Kante)"
+            }
+          >
+            {maxW ? <IconCollapse size={17} /> : <IconExpand size={17} />}
+          </button>
+          {ext ? (
+            <a
+              className="source-icon-btn source-icon-btn--text"
+              href={ext}
+              title="In Obsidian öffnen"
+            >
               Obsidian
             </a>
-          </div>
-        ) : null
+          ) : null}
+          <button
+            type="button"
+            className="source-icon-btn source-icon-btn--close"
+            onClick={onClose}
+            aria-label="Fenster schließen"
+            title="Fenster schließen (Esc)"
+          >
+            <IconClose size={17} />
+          </button>
+        </div>
       }
     >
       {canFind ? (
@@ -349,6 +453,8 @@ function SourceViewer({ file, open, onClose, side = "right", mode = "overlay" })
           }
         />
       ) : null}
+
+      {saveErr ? <p className="source-error">{saveErr}</p> : null}
 
       {isWeb ? (
         <div className="source-web">
@@ -399,7 +505,17 @@ function SourceViewer({ file, open, onClose, side = "right", mode = "overlay" })
                   if (!webPage) setWebReload((n) => n + 1);
                 }}
               >
-                {showText ? "Im Fenster" : "Textansicht"}
+                {showText ? (
+                  <>
+                    <IconExpand size={15} />
+                    <span>Im Fenster</span>
+                  </>
+                ) : (
+                  <>
+                    <IconDocument size={15} />
+                    <span>Textansicht</span>
+                  </>
+                )}
               </button>
             )}
             {url ? (
@@ -408,20 +524,35 @@ function SourceViewer({ file, open, onClose, side = "right", mode = "overlay" })
                 className="source-action"
                 onClick={() => openWebUrl(url)}
               >
-                Browser
+                <IconGlobe size={15} />
+                <span>Browser</span>
               </button>
             ) : null}
-            <button type="button" className="source-action" onClick={onClose}>
-              Zurück
-            </button>
           </div>
         </div>
       ) : isPdf ? (
-        <iframe
-          className="source-frame"
-          src={frameSrc || fileUrl}
-          title={title}
-        />
+        <div className="source-pdf">
+          <div className="source-pdf-tools">
+            <button
+              type="button"
+              className="source-pdf-btn"
+              onClick={() => setPdfZoom((z) => Math.max(50, z - 25))}
+              aria-label="Kleiner"
+            >
+              −
+            </button>
+            <span className="source-pdf-zoom">{pdfZoom}%</span>
+            <button
+              type="button"
+              className="source-pdf-btn"
+              onClick={() => setPdfZoom((z) => Math.min(250, z + 25))}
+              aria-label="Größer"
+            >
+              +
+            </button>
+          </div>
+          <PdfSheet url={fileUrl} zoom={pdfZoom} focusPage={pdfFocus} />
+        </div>
       ) : error ? (
         <p className="source-error">{error}</p>
       ) : (

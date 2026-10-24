@@ -278,24 +278,92 @@ function IconStop({ size = 18 }) {
   );
 }
 
-/** Web-Tor password. */
+/** Aufladen: Schloss und Münze. Münze liegt auf --panel, damit sie das Schloss deckt. */
+/** Papierkorb — „Gastzugang entfernen". */
+function IconTrash({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 7h16M9.5 7V5.2A1.2 1.2 0 0 1 10.7 4h2.6a1.2 1.2 0 0 1 1.2 1.2V7"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6.5 7l.8 11.4A1.7 1.7 0 0 0 9 20h6a1.7 1.7 0 0 0 1.7-1.6L17.5 7"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M10.3 11v5M13.7 11v5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/**
+ * Schlüssel — steht für „Kennwort ändern". Das Schloss war dafür falsch
+ * belegt: es saß auf einem Knopf mit dem Titel „Aufladen" und öffnete einen
+ * Dialog, der gleichzeitig Token-Pakete erklärte und das Passwort änderte.
+ */
+function IconKey({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="8.4" cy="15.6" r="4.1" stroke="currentColor" strokeWidth="1.75" />
+      <path
+        d="M11.3 12.7 20 4m-3.1 3.1 2.5 2.5M14.6 9.4l2.5 2.5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function IconLock({ size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <rect
-        x="6"
-        y="11"
+        x="2.75"
+        y="10"
         width="12"
-        height="9"
+        height="10"
         rx="2"
         stroke="currentColor"
         strokeWidth="1.75"
       />
       <path
-        d="M8.5 11V8.2a3.5 3.5 0 0 1 7 0V11"
+        d="M5.5 10V7.7a3.25 3.25 0 0 1 6.5 0V10"
         stroke="currentColor"
         strokeWidth="1.75"
         strokeLinecap="round"
+      />
+      <circle cx="16.7" cy="16.15" r="5.35" fill="var(--panel)" stroke="currentColor" strokeWidth="1.75" />
+      <path
+        d="M16.7 13.15v6"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Herz — „Spenden" (Web-Header): Glyph ist kostenlos nutzbar und wird über
+ * Spenden finanziert. Gold-Akzent, siehe .pill-btn--donate in styles.css.
+ */
+function IconHeart({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
@@ -369,6 +437,142 @@ function IconRewind({ size = 20 }) {
   );
 }
 
+/* Quellen-Fenster: Pfeil in Ablage — Datei herunterladen. */
+function IconDownload({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 4.5v10M12 14.5l-4-4M12 14.5l4-4"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M4.5 19.5h15"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/* Quellen-Fenster: Ecken nach außen — volle Breite. */
+function IconExpand({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M14.5 4.5h5v5M9.5 19.5h-5v-5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M19.5 4.5l-5.2 5.2M4.5 19.5l5.2-5.2"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/* Quellen-Fenster: Ecken nach innen — zurück zur Fensterbreite. */
+function IconCollapse({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M19.5 9.5h-5v-5M4.5 14.5h5v5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M14.5 9.5l5-5M9.5 14.5l-5 5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/* Quellen-Fenster: Textseite mit Zeilen — Textansicht (Web ohne iframe). */
+function IconDocument({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="5" y="4" width="14" height="16" rx="2" stroke="currentColor" strokeWidth="1.75" />
+      <path
+        d="M8.5 9h7M8.5 12.5h7M8.5 16h4"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/* Quellen-Fenster: Globus — ganze Seite im Browser öffnen. */
+function IconGlobe({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.25" stroke="currentColor" strokeWidth="1.75" />
+      <path
+        d="M3.75 12h16.5M12 3.75c2.3 2.2 3.6 5.1 3.6 8.25S14.3 18.05 12 20.25c-2.3-2.2-3.6-5.1-3.6-8.25S9.7 5.95 12 3.75z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/* Quellen-Fenster: × — Fenster schließen. */
+function IconClose({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M6 6l12 12M18 6L6 18"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/* Suche im Dokument: Chevron links/rechts — symmetrische Wurf-Buttons. */
+function IconChevronLeft({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M14.5 6l-6 6 6 6"
+        stroke="currentColor"
+        strokeWidth="1.85"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconChevronRight({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M9.5 6l6 6-6 6"
+        stroke="currentColor"
+        strokeWidth="1.85"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export {
   IconSearch,
   IconCompose,
@@ -389,7 +593,18 @@ export {
   IconRefresh,
   IconStop,
   IconLock,
+  IconKey,
+  IconHeart,
+  IconTrash,
   IconLink,
   IconLinkOff,
   IconRewind,
+  IconDownload,
+  IconExpand,
+  IconCollapse,
+  IconClose,
+  IconDocument,
+  IconGlobe,
+  IconChevronLeft,
+  IconChevronRight,
 };

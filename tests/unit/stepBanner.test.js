@@ -17,6 +17,21 @@ test("buildStepBanner", async (t) => {
     assert.equal(buildStepBanner(undefined), "");
   });
 
+  await t.test("Routine-Stufen haben deutsche Labels (Pflicht: beide Mappings)", () => {
+    const banner = buildStepBanner({
+      answer: "ok",
+      trace: {
+        steps: [
+          { step: "RoutineOverview", status: "success", detail: "3 Jobs" },
+          { step: "RoutineRun", status: "success", detail: "daily" },
+        ],
+      },
+    });
+    assert.match(banner, /Routine — sieht die Lage/);
+    assert.match(banner, /Routine — löst ein To-do jetzt aus/);
+    assert.doesNotMatch(banner, /Tool · RoutineRun/);
+  });
+
   await t.test("VaultFind leer (nichts gefunden) + WebSearch + Router-Zeile", () => {
     const data = {
       answer: "Antworttext",
@@ -119,6 +134,26 @@ test("buildStepBanner", async (t) => {
       },
     });
     assert.match(banner, /grob\/exa · 5 Treffer/);
+  });
+
+  await t.test("Suchbrücke steht als Query-Zeile vor den Suchen", () => {
+    const banner = buildStepBanner({
+      trace: {
+        provider: "direct",
+        model: "claude-haiku-5-5",
+        steps: [
+          { step: "SearchBridge", status: "success",
+            detail: "„Ersatzstoffprüfung Gefahrstoffe Frist“" },
+          { step: "WebSearch", status: "success", detail: "Exa+TinyFish · 5 Treffer" },
+          { step: "WebSearch", status: "success", detail: "Exa+TinyFish · 3 Treffer" },
+        ],
+      },
+    });
+    assert.match(banner, /Tool · Query — formuliert Suchbegriffe aus dem Verlauf/);
+    assert.match(banner, /Ersatzstoffprüfung Gefahrstoffe Frist/);
+    // Brücke zuerst, dann die beiden Suchläufe (Think → Search → Search).
+    assert.ok(banner.indexOf("Tool · Query") < banner.indexOf("Tool · SearchWeb"));
+    assert.equal((banner.match(/Tool · SearchWeb/g) || []).length, 2);
   });
 });
 

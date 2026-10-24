@@ -1,5 +1,5 @@
 /**
- * Kabelsalat — Code-Workspaces an ^_Code anbinden/lösen.
+ * Kabelsalat — Code-Workspaces an ^_tick anbinden/lösen.
  * SoT: ~/.glyph/workspaces.json via glyph-agent /workspaces
  * Copyright (c) 2026 Alexander Hubert
  * SPDX-License-Identifier: MIT
@@ -9,7 +9,7 @@ import { BindPanel } from "./BindPanel.jsx";
 const MODE_TITLES = {
   r: "Nur lesen — kein Write, keine Shell",
   rw: "Lesen, schreiben, Whitelist-Shell",
-  private: "Zu — kein Zugriff für ^_Code",
+  private: "Zu — kein Zugriff für ^_tick",
 };
 
 const MODE_LABELS = {
@@ -21,7 +21,7 @@ const MODE_LABELS = {
 export function WorkspacesPanel() {
   return (
     <BindPanel
-      hub="^_Code"
+      hub="^_tick"
       resource="Workspace"
       listKey="workspaces"
       apiBase="/api/workspaces"

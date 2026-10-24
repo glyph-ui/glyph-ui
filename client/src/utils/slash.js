@@ -294,6 +294,18 @@ export function isHiddenAgentCommand(name) {
   return k === "quit" || k === "exit";
 }
 
+/**
+ * Interne Betriebs-Befehle (HSEQ-Jobs, Wartung) — für Kunden ohne Belang
+ * (Meldung 2026-10-03: „skills sind teilweise sinnlos wie /hseq-…").
+ * Sie bleiben auf der Arbeitsfläche (Schreibtisch) sichtbar.
+ */
+const INTERNAL_OPS =
+  /^(hseq[-_]|td[-_]|einmal-job|handover|merken|vault-ingest|memory-hygiene|wiki-hygiene|session-cleanup|index-hygiene)/i;
+
+export function isInternalOpsCommand(name) {
+  return INTERNAL_OPS.test(String(name || "").replace(/^\//, ""));
+}
+
 export function withoutHiddenAgentCommands(list) {
   return (list || []).filter((c) => c && !isHiddenAgentCommand(c.name));
 }

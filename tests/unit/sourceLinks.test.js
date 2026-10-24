@@ -181,6 +181,10 @@ describe("linkifyAnswer", () => {
     assert.ok(out.includes("[vorschriften.bgn-branchenwissen.de](https://"), out);
     assert.ok(!out.includes("anl2.htm]"), out);
     assert.ok(out.includes("`bghm.de/…/anlage-2`"), out);
+    // Meldung 2026-10-09: das Klammer-Ziel wurde aufgeloest und der Link blieb
+    // als doppeltes Label ohne Ziel stehen — genau ein Link, kein Rest davor.
+    assert.equal((out.match(/\]\(/g) || []).length, 1, out);
+    assert.ok(!out.includes("] ["), out);
   });
 
   it("macht nackte Domains und http-URLs klickbar", () => {
@@ -205,6 +209,43 @@ describe("linkifyAnswer", () => {
       classifyLink(href, "http://127.0.0.1:3847").kind,
       "vault",
     );
+  });
+
+  it("macht Vault-Pfade in Backticks klickbar (Quelle: `/…/Datei.pdf`)", () => {
+    setKnownVaults(["ASI, BS. UWS, QM, EM"]);
+    const out = linkifyAnswer(
+      "Quelle: `/ASI, BS. UWS, QM, EM/Arbeitssicherheit/Technische Regeln/TRGS-510.pdf`",
+    );
+    assert.ok(
+      out.includes("[TRGS-510.pdf](/api/vault/file?path="),
+      `Pfad im Code-Span soll zum Chip-Link werden: ${out}`,
+    );
+    assert.ok(!out.includes("`/ASI"), "kein Rest-Backtick, keine rohe Pfadzeile");
+    const href = out.match(/\]\((\/api\/vault\/file\?path=[^)]+)\)/)[1];
+    assert.equal(
+      classifyLink(href, "http://127.0.0.1:3847").path,
+      "/ASI, BS. UWS, QM, EM/Arbeitssicherheit/Technische Regeln/TRGS-510.pdf",
+    );
+  });
+
+  it("loest den Pfad auch mit Vorspann im Code-Span auf", () => {
+    setKnownVaults(["HSEQ Sync"]);
+    const out = linkifyAnswer("`Quelle: /HSEQ Sync/Themen/PSA.md`");
+    assert.ok(out.includes("[PSA.md](/api/vault/file?path="), out);
+    assert.ok(out.includes("Quelle:"), "Vorspann bleibt lesbbarer Text");
+    assert.ok(!out.includes("`"), "Code-Span ist aufgeloest");
+  });
+
+  it("laesst reine Dateinamen in Backticks als Code stehen", () => {
+    setKnownVaults(["HSEQ Sync"]);
+    const out = linkifyAnswer("Siehe `TRGS-510.pdf` und `README.md`");
+    assert.equal(out, "Siehe `TRGS-510.pdf` und `README.md`");
+  });
+
+  it("verlinkt Code-Span-Pfade nicht ohne bekannte Vault-Namen", () => {
+    setKnownVaults([]);
+    const text = "Quelle: `/ASI, BS. UWS, QM, EM/Umweltmanagement/AVV.pdf`";
+    assert.equal(linkifyAnswer(text), text);
   });
 });
 

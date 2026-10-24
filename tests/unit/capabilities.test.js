@@ -13,7 +13,7 @@ test("Capability-Testmatrix", async (t) => {
   const cases = {
     grok: { sessionList: true, activity: true, swarm: false },
     "glyph-agent": { sessionList: false, activity: false, swarm: true },
-    _code: { sessionList: false, activity: false, swarm: true },
+    _tick: { sessionList: false, activity: false, swarm: true },
   };
 
   for (const [id, expected] of Object.entries(cases)) {

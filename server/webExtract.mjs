@@ -10,6 +10,8 @@
  * gelesen. Copyright (c) 2026 Alexander Hubert — MIT License
  */
 
+import { isIP } from "node:net";
+
 const TITLE_RE = /<title[^>]*>([\s\S]*?)<\/title>/i;
 const BLOCK_TAGS =
   /<(script|style|noscript|svg|iframe|template|object|canvas)\b[^>]*>[\s\S]*?<\/\1\s*>/gi;
@@ -98,33 +100,74 @@ export function isEmbeddable(headers) {
 
 /** Grundschutz gegen SSRF: lokale/dienstinterne Hosts nicht anfassen. */
 export function isPrivateHost(hostname) {
-  const h = String(hostname || "")
+  let h = String(hostname || "")
     .trim()
     .toLowerCase()
     .replace(/^\[|\]$/g, "");
+  if (h.endsWith(".")) h = h.slice(0, -1);
   if (!h) return true;
   if (
     h === "localhost" ||
     h.endsWith(".localhost") ||
     h.endsWith(".local") ||
-    h.endsWith(".internal") ||
-    h === "::1" ||
-    h === "::" ||
-    h === "0.0.0.0"
+    h.endsWith(".internal")
   ) {
     return true;
   }
+
+  // IPv4-mapped/compatible IPv6 auf IPv4 zurückführen: [::ffff:127.0.0.1]
+  // und [::ffff:7f00:1] waren vorher beide "öffentlich".
+  const mapped = h.match(/^::(?:ffff:)?(.+)$/);
+  if (mapped) {
+    const tail = mapped[1];
+    if (tail.includes(".")) return isPrivateHost(tail);
+    const groups = tail.split(":");
+    if (groups.length === 2) {
+      const hi = parseInt(groups[0], 16);
+      const lo = parseInt(groups[1], 16);
+      if (Number.isFinite(hi) && Number.isFinite(lo)) {
+        return isPrivateHost(
+          [hi >> 8, hi & 255, lo >> 8, lo & 255].join("."),
+        );
+      }
+    }
+  }
+
+  if (isIP(h) === 6) {
+    if (h === "::1" || h === "::") return true;
+    // ULA (fc00::/7), Link-Local (fe80::/10), Multicast (ff00::/8)
+    if (/^f[cd]/.test(h)) return true;
+    if (/^fe[89ab]/.test(h)) return true;
+    if (/^ff/.test(h)) return true;
+    return false;
+  }
+
   const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (!m) return false;
+  if (!m) {
+    // Ganzzahlige IPv4-Schreibweise (http://2130706433/).
+    if (/^\d+$/.test(h)) {
+      const n = Number(h);
+      if (Number.isFinite(n) && n >= 0 && n <= 0xffffffff) {
+        return isPrivateHost(
+          [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join("."),
+        );
+      }
+    }
+    return false;
+  }
   const a = Number(m[1]);
   const b = Number(m[2]);
   return (
     a === 0 ||
     a === 10 ||
     a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
     (a === 169 && b === 254) ||
     (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168)
+    (a === 192 && b === 168) ||
+    (a === 192 && b === 0) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    a >= 224
   );
 }
 

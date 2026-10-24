@@ -51,6 +51,28 @@ export function normalizeProvider(value) {
 }
 
 /**
+ * Darf an diese Adresse ein Modell-/Key-Push gehen?
+ *
+ * Die Engine läuft bewusst lokal. Würde die Brücke einem in `bindings.json`
+ * gesetzten Fremd-Host folgen, könnte ein manipuliertes `GLYPH_AGENT_URL`
+ * die hinterlegten API-Keys an einen Angreifer schicken (`buildAgentPush`
+ * enthält Klartext-Keys). Deshalb: nur Loopback.
+ *
+ * @param {string} raw
+ * @returns {boolean}
+ */
+export function isLoopbackAgentUrl(raw) {
+  try {
+    const u = new URL(String(raw || "").trim());
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    const host = u.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    return host === "127.0.0.1" || host === "localhost" || host === "::1";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Effektiver Hop eines Provider-Modus (für Vergleiche):
  * hybrid läuft je nach Peak über direct (off-peak) oder openrouter (Peak).
  */
@@ -794,6 +816,15 @@ export async function syncModelsIfMismatch(opts = {}) {
   const agentUrl =
     String(env.GLYPH_AGENT_URL || file.settings.GLYPH_AGENT_URL || "").trim() ||
     "http://127.0.0.1:18899";
+  if (!isLoopbackAgentUrl(agentUrl)) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: "non_loopback_agent_url",
+      error:
+        "GLYPH_AGENT_URL ist nicht lokal — Sync/Push verweigert (nur 127.0.0.1/localhost/[::1]).",
+    };
+  }
   const health =
     opts.agentHealth ||
     (await probeAgentHealth(agentUrl, { fetchImpl: opts.fetchImpl }));
@@ -868,6 +899,14 @@ async function syncProviderIfMismatch(file, healthBody) {
   const agentUrl =
     String(env.GLYPH_AGENT_URL || file.settings?.GLYPH_AGENT_URL || "").trim() ||
     "http://127.0.0.1:18899";
+  if (!isLoopbackAgentUrl(agentUrl)) {
+    return {
+      ok: false,
+      skipped: true,
+      error:
+        "GLYPH_AGENT_URL ist nicht lokal — Provider-Push verweigert (nur 127.0.0.1/localhost/[::1]).",
+    };
+  }
   const results = [];
   if (agentWant !== agentHas) {
     results.push(
@@ -1114,9 +1153,9 @@ export async function buildBindingsStatus(opts = {}) {
           ? "OAuth ok — Profil Grok wählen und verbinden."
           : "CLI installieren und im Terminal `grok login` ausführen. Glyph speichert keinen OAuth-Token selbst.",
       },
-      _code: {
-        id: "_code",
-        label: "^_Code",
+      _tick: {
+        id: "_tick",
+        label: "^_tick",
         auth: "api_key",
         ok: codeOk,
         checks: [

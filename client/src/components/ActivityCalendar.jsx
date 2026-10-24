@@ -17,6 +17,14 @@ import {
   tasksEndpointError,
 } from "../utils/tasks.js";
 import { SideDrawer } from "./SideDrawer.jsx";
+import {
+  routineCounts,
+  routineJobList,
+  routineLastRun,
+  routineRunPrompt,
+  routineStatusPrompt,
+  routineTiles,
+} from "../utils/routines.js";
 
 const WEEKDAYS = [
   { v: 0, l: "Mo" },
@@ -156,9 +164,21 @@ function MoreMenu({ id, label = "Weitere Aktionen", disabled, items }) {
  *   onClose: () => void,
  *   onOpenSession?: (json: object) => void,
  *   canSeeActivity?: boolean,
+ *   canSeeRoutines?: boolean,  Routine-Lage (^_tick): Zähler + Job-Ordner
+ *   ownerLabel?: string,   Kopf, an den ein To-do-Prompt geht (Anzeige)
  * }} props
  */
-function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActivity = true, side = "right", mode = "overlay" }) {
+function ActivityCalendar({
+  open,
+  onClose,
+  onOpenSession,
+  onUseTask,
+  canSeeActivity = true,
+  canSeeRoutines = false,
+  ownerLabel = "den Kopf",
+  side = "right",
+  mode = "overlay",
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState(null);
@@ -174,6 +194,9 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
   const [hintMore, setHintMore] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [writeConfirmPending, setWriteConfirmPending] = useState(false);
+  const [routine, setRoutine] = useState(null);
+  const [routineBusy, setRoutineBusy] = useState(false);
+  const [routineError, setRoutineError] = useState("");
   const panelRef = useRef(null);
   const uid = useId();
 
@@ -203,6 +226,24 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
         fetch(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "DELETE" }).catch(() => null),
       ),
     );
+  }, []);
+
+  /** Routine-Lage (^_tick): Zähler, Job-Ordner, letzte Läufe — read-only. */
+  const loadRoutine = useCallback(async () => {
+    setRoutineBusy(true);
+    try {
+      const res = await fetch("/api/routines/overview");
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.ok === false) {
+        throw new Error(json.error || "Routine-Lage nicht erreichbar (glyph-agent neu starten?)");
+      }
+      setRoutine(json);
+    } catch (err) {
+      setRoutine(null);
+      setRoutineError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRoutineBusy(false);
+    }
   }, []);
 
   async function assignTaskTarget(taskId, nextTarget) {
@@ -253,6 +294,13 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
     setWriteConfirmPending(false);
     void loadTodos();
     void loadTasks().catch((err) => setError(err instanceof Error ? err.message : String(err)));
+    if (canSeeRoutines) {
+      setRoutineError("");
+      void loadRoutine();
+    } else {
+      setRoutine(null);
+      setRoutineError("");
+    }
     if (!canSeeActivity) {
       setData(null);
       setLoading(false);
@@ -280,7 +328,7 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
     return () => {
       cancelled = true;
     };
-  }, [open, canSeeActivity, loadTodos, loadTasks]);
+  }, [open, canSeeActivity, canSeeRoutines, loadRoutine, loadTodos, loadTasks]);
 
   const dayLabels = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const formatDay = (iso) => {
@@ -483,6 +531,98 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
         <div className="cal-scroll">
           {tab === "plan" ? (
             <div className="cal-plan" role="tabpanel" aria-label="Aufgaben und wiederkehrende To-dos">
+              {canSeeRoutines ? (
+                <section className="cal-zone cal-zone--routine" aria-label="Routine-Lage">
+                  <div className="cal-zone-head">
+                    <h3 className="cal-zone-title">Routine-Lage</h3>
+                    <span className="cal-zone-count">
+                      {routine ? `${routineCounts(routine).daily + routineCounts(routine).inbox} im Ordner` : "—"}
+                    </span>
+                    <button
+                      type="button"
+                      className="ghost cal-zone-primary"
+                      disabled={routineBusy}
+                      onClick={() => void loadRoutine()}
+                    >
+                      {routineBusy ? "Lädt…" : "Aktualisieren"}
+                    </button>
+                  </div>
+                  <p className="overview-hint cal-hint-one" style={{ margin: 0 }}>
+                    {ownerLabel === "^_tick"
+                      ? "Job-Ordner · Plan & Aktivität — Besitzer ^_tick."
+                      : "Job-Ordner · Plan & Aktivität — Besitzer ^_tick (aktiver Kopf: " + ownerLabel + ")."}
+                  </p>
+                  {routineError ? (
+                    <p className="cal-detail-empty">{routineError}</p>
+                  ) : (
+                    <>
+                      <div className="cal-routine-tiles">
+                        {routineTiles(routine).map((tile) => (
+                          <div
+                            key={tile.id}
+                            className={`cal-routine-tile${tile.tone === "warn" && tile.value > 0 ? " cal-routine-tile--warn" : ""}`}
+                          >
+                            <span className="cal-routine-value">{tile.value}</span>
+                            <span className="cal-routine-label">{tile.label}</span>
+                            <span className="cal-routine-detail">{tile.detail}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {routineJobList(routine).length ? (
+                        <ul className="cal-todo-list cal-routine-jobs">
+                          {routineJobList(routine).map((job) => (
+                            <li key={`${job.box}-${job.name}`} className="cal-todo-item">
+                              <div className="cal-todo-main">
+                                <div className="cal-todo-title-row">
+                                  <span className="cal-todo-title">{job.name.replace(/\.md$/, "")}</span>
+                                  <span className="cal-status-chip cal-status-chip--open">{job.box}</span>
+                                </div>
+                                <span className="cal-todo-meta">
+                                  {job.date}
+                                  {job.head ? ` · ${job.head}` : ""}
+                                </span>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="cal-detail-empty">
+                          Kein Job im Ordner — Daily/ und Inbox/ sind leer.
+                        </p>
+                      )}
+                      {routineLastRun(routine) ? (
+                        <p className="cal-hint-detail">
+                          Letzter Lauf: {routineLastRun(routine).title} ·{" "}
+                          {routineLastRun(routine).ok ? "ok" : "Fehler"} ·{" "}
+                          {routineLastRun(routine).ts}
+                        </p>
+                      ) : null}
+                      <div className="cal-inline-actions">
+                        <button
+                          type="button"
+                          className="primary cal-todo-btn"
+                          onClick={() => {
+                            onUseTask?.(routineRunPrompt());
+                            onClose?.();
+                          }}
+                        >
+                          Routine starten
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost cal-todo-btn"
+                          onClick={() => {
+                            onUseTask?.(routineStatusPrompt());
+                            onClose?.();
+                          }}
+                        >
+                          Was liegt an?
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </section>
+              ) : null}
               <section className="cal-zone cal-zone--tasks" aria-label="Übergebene Aufgaben">
                 <div className="cal-zone-head">
                   <h3 className="cal-zone-title">Aufgaben</h3>
@@ -636,7 +776,7 @@ function ActivityCalendar({ open, onClose, onOpenSession, onUseTask, canSeeActiv
                       />
                     </label>
                     <label className="cal-todo-field">
-                      <span>Prompt (an °_Agent)</span>
+                      <span>Prompt (an {ownerLabel})</span>
                       <textarea
                         required
                         rows={4}

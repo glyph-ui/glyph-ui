@@ -10,6 +10,10 @@ import {
   formatContextTooltip,
   formatLvlBarLabel,
   formatTokenCount,
+  PACK_TOKENS,
+  TOKENS_PER_CENT,
+  packCharge,
+  packMeter,
   goldFillRatio,
   resolveContextWindow,
   scrollMetrics,
@@ -148,6 +152,14 @@ describe("formatLvlBarLabel", () => {
     assert.equal(formatLvlBarLabel(0, false), "LVL 0 · 0%");
   });
 
+  it("token scale keeps level and used/window apart", () => {
+    const pct = Math.round((21_000 / 256_000) * 100);
+    assert.equal(
+      formatLvlBarLabel(pct, false, { tokens: true, used: 21_000, window: 256_000 }),
+      "LVL 0 · 21k/256k",
+    );
+  });
+
   it("level digit = floor(pct/10) clamped 0..10", () => {
     assert.equal(formatLvlBarLabel(1), "LVL 0 · 1%");
     assert.equal(formatLvlBarLabel(9), "LVL 0 · 9%");
@@ -167,6 +179,68 @@ describe("formatLvlBarLabel", () => {
     assert.equal(formatLvlBarLabel(-5), "LVL 0 · 0%");
     assert.equal(formatLvlBarLabel(150), "LVL 10 · 100%");
     assert.equal(formatLvlBarLabel(NaN), "LVL 0 · 0%");
+  });
+});
+
+describe("packMeter", () => {
+  it("2560 tokens are one cent, 512k is 200c", () => {
+    assert.equal(TOKENS_PER_CENT, 2560);
+    assert.equal(PACK_TOKENS, 512_000);
+    assert.equal(512_000 / 200, 2560);
+  });
+
+  it("full top-up reads 200c · 0/512k", () => {
+    const m = packMeter(0);
+    assert.equal(m.label, "200c · 0/512k");
+    assert.equal(m.centsLeft, 200);
+    assert.equal(m.consumed, 0);
+    assert.equal(m.fill, 0);
+    assert.equal(m.warn, false);
+    assert.equal(m.blocked, false);
+  });
+
+  it("148k consumed leaves 142c · 148k/512k", () => {
+    const m = packMeter(148_000);
+    assert.equal(m.label, "142c · 148k/512k");
+    assert.equal(m.consumed, 148_000);
+    assert.equal(m.centsLeft, 142);
+  });
+
+  it("80% used warns at 40c · 410k/512k", () => {
+    const m = packMeter(409_600);
+    assert.equal(m.label, "40c · 410k/512k");
+    assert.equal(m.centsLeft, 40);
+    assert.equal(m.warn, true);
+    assert.equal(m.blocked, false);
+  });
+
+  it("512k consumed reads 0c · 512k/512k and blocks", () => {
+    const m = packMeter(512_000);
+    assert.equal(m.label, "0c · 512k/512k");
+    assert.equal(m.centsLeft, 0);
+    assert.equal(m.consumed, 512_000);
+    assert.equal(m.warn, true);
+    assert.equal(m.blocked, true);
+  });
+
+  it("usage past the pack stays at 0c · 512k/512k", () => {
+    const m = packMeter(900_000);
+    assert.equal(m.label, "0c · 512k/512k");
+    assert.equal(m.centsLeft, 0);
+    assert.equal(m.consumed, 512_000);
+    assert.equal(m.blocked, true);
+  });
+
+  it("does not charge a balance that was never topped up", () => {
+    assert.equal(packCharge({ source: "password", opened: true }, 26_000), 0);
+    assert.equal(packCharge(null, 26_000), 0);
+    assert.equal(packMeter(packCharge(null, 26_000)).label, "200c · 0/512k");
+  });
+
+  it("charges only after Aufladen", () => {
+    const access = { source: "aufladen", opened: true, packTokens: 512_000 };
+    assert.equal(packCharge(access, 26_000), 26_000);
+    assert.equal(packCharge(access, 0), 0);
   });
 });
 

@@ -59,6 +59,12 @@ describe("webScope: isPathAllowed", () => {
     assert.equal(DEFAULT_WEB_SCOPE.redact, true);
   });
 
+  it("Default gibt HSEQ Sync nie frei (echte Namen/Orte)", () => {
+    assert.ok(!DEFAULT_WEB_SCOPE.vaults.includes("HSEQ Sync"));
+    const s = loadWebScope("/tmp/definitiv-nicht-vorhanden-web-scope");
+    assert.equal(isPathAllowed("/HSEQ Sync/Themen/Gefahrstoffe.md", s), false);
+  });
+
   it("loadWebScope fällt ohne Datei auf Defaults zurück", () => {
     const s = loadWebScope("/tmp/definitiv-nicht-vorhanden-web-scope");
     assert.deepEqual(s.vaults, [...DEFAULT_WEB_SCOPE.vaults]);

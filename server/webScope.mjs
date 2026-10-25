@@ -9,7 +9,7 @@
  *
  * Konfiguration: `~/.glyph-ui/web-scope.json`
  *   {
- *     "vaults":    ["ASI, BS. UWS, QM, EM", "HSEQ Sync"],   // erlaubte Sammlungen
+ *     "vaults":    ["ASI, BS. UWS, QM, EM"],                // erlaubte Sammlungen
  *     "denyPaths": ["00 Arbeitsfluss/Eingang", "..."],        // gesperrte Ordner
  *     "redact":    true                                        // Namen in Auszügen maskieren
  *   }
@@ -27,7 +27,8 @@ import os from "node:os";
 
 /** Anfangsstand — bewusst eng, aber: bitte einmal selbst prüfen. */
 export const DEFAULT_WEB_SCOPE = Object.freeze({
-  vaults: Object.freeze(["ASI, BS. UWS, QM, EM", "HSEQ Sync"]),
+  // HSEQ Sync nie: Arbeitsordner mit echten Namen und Orten (2026-10-25).
+  vaults: Object.freeze(["ASI, BS. UWS, QM, EM"]),
   denyPaths: Object.freeze([
     "00 Arbeitsfluss/Eingang",
     "00 Arbeitsfluss/Fertig",

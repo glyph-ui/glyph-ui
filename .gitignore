@@ -37,6 +37,9 @@ Thumbs.db
 .grok-chat-ui/
 *.local
 .local/
+# Reparatur-Backups / Arbeitsstände mit Vault-Inhalten (HSEQ)
+.dsh-repair/
+assets/pdf-index-2026-09-09/
 
 # Test / coverage
 coverage/

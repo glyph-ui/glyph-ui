@@ -59,12 +59,13 @@ function hitVaultLabel(hit) {
 
 /** Picker + Hub: only these Arbeits-Vaults (names as in vaults.json). */
 const PICKER_VAULT_ALLOWLIST = Object.freeze([
-  "HSEQ Sync",
   "ASI, BS. UWS, QM, EM",
 ]);
 
 /** Never advertise in picker/hub (even if engine returns them). */
 const PICKER_VAULT_DENY = new Set([
+  // Arbeitsordner mit echten Namen/Orten — nie in der Vault-Suche (2026-10-25).
+  "HSEQ Sync",
   "Privat",
   "Peniel",
   "memory-wiki",
@@ -78,7 +79,7 @@ function shortHubVaultLabel(name) {
   return n;
 }
 
-/** Hub chip near apple: „sucht in: HSEQ Sync · ASI…“ — allowlist only. */
+/** Hub chip near apple: „sucht in: ASI…“ — allowlist only. */
 function hubSearchScopeLabel(vaultNames) {
   const names =
     Array.isArray(vaultNames) && vaultNames.length
@@ -257,10 +258,10 @@ function vaultSendIntent({
   return "send";
 }
 
-/** Apfel: Allowlist-Hubs (HSEQ Sync · ASI…) + KomNet/DGUV. Wiki läuft immer; Privat nie. */
+/** Apfel: Allowlist-Hubs (ASI…) + KomNet/DGUV. Wiki läuft immer; Privat nie. */
 function appleToggleLabel(on) {
   return on
-    ? "Ordner-Suche an — Allowlist-Hubs (HSEQ Sync · ASI…), KomNet, DGUV"
+    ? "Ordner-Suche an — Allowlist-Hubs (ASI…), KomNet, DGUV"
     : "Ordner-Suche aus — Wiki läuft; Klick: Enable Allowlist-Hubs (kein Privat)";
 }
 

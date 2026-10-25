@@ -74,7 +74,7 @@ describe("vaultSearch session toggle", () => {
     assert.doesNotMatch(off, /Arbeits-Vault/);
     const on = appleToggleLabel(true);
     assert.match(on, /Allowlist-Hubs/);
-    assert.match(on, /HSEQ Sync/);
+    assert.doesNotMatch(on, /HSEQ Sync/);
     assert.match(on, /ASI/);
     assert.match(on, /DGUV/);
     assert.doesNotMatch(on, /Arbeits-Vault/);
@@ -87,11 +87,11 @@ describe("vaultSearch hits", () => {
     query: "PSA",
     status: "success",
     hits: [
-      { id: "folder:/HSEQ Sync/Eingang", kind: "folder", path: "/HSEQ Sync/Eingang", title: "Eingang" },
+      { id: "folder:/ASI, BS. UWS, QM, EM/Eingang", kind: "folder", path: "/ASI, BS. UWS, QM, EM/Eingang", title: "Eingang" },
       {
-        id: "file:/HSEQ Sync/Eingang/PSA.md",
+        id: "file:/ASI, BS. UWS, QM, EM/Eingang/PSA.md",
         kind: "file",
-        path: "/HSEQ Sync/Eingang/PSA.md",
+        path: "/ASI, BS. UWS, QM, EM/Eingang/PSA.md",
         title: "PSA.md",
         excerpt: "PSA Pflicht",
         score: 0.8,
@@ -110,9 +110,9 @@ describe("vaultSearch hits", () => {
 
   it("filters to selected only", () => {
     const preview = normalizePreviewPayload(raw, "PSA");
-    const picked = selectedHits(preview.hits, new Set(["file:/HSEQ Sync/Eingang/PSA.md"]));
+    const picked = selectedHits(preview.hits, new Set(["file:/ASI, BS. UWS, QM, EM/Eingang/PSA.md"]));
     assert.equal(picked.length, 1);
-    assert.equal(hitId(picked[0]), "file:/HSEQ Sync/Eingang/PSA.md");
+    assert.equal(hitId(picked[0]), "file:/ASI, BS. UWS, QM, EM/Eingang/PSA.md");
     const wire = toWireSelected(picked);
     assert.equal(wire[0].kind, "file");
     assert.equal(wire[0].excerpt, "PSA Pflicht");
@@ -325,15 +325,15 @@ describe("vaultSendIntent last pick", () => {
 
 describe("hub + picker allowlist", () => {
   it("hub label only shows allowlist (short ASI)", () => {
-    assert.equal(hubSearchScopeLabel(), "sucht in: HSEQ Sync · ASI…");
+    assert.equal(hubSearchScopeLabel(), "sucht in: ASI…");
     assert.equal(
       hubSearchScopeLabel(["HSEQ Sync", "Privat", "memory-wiki", "ASI, BS. UWS, QM, EM"]),
-      "sucht in: HSEQ Sync · ASI…",
+      "sucht in: ASI…",
     );
   });
 
-  it("deny Privat, Peniel, memory-wiki, hygiene paths", () => {
-    assert.equal(isPickerVaultVisible("HSEQ Sync"), true);
+  it("deny HSEQ Sync, Privat, Peniel, memory-wiki, hygiene paths", () => {
+    assert.equal(isPickerVaultVisible("HSEQ Sync"), false);
     assert.equal(isPickerVaultVisible("ASI, BS. UWS, QM, EM"), true);
     assert.equal(isPickerVaultVisible("Privat"), false);
     assert.equal(isPickerVaultVisible("Peniel"), false);
@@ -341,12 +341,13 @@ describe("hub + picker allowlist", () => {
     assert.equal(isPickerVaultVisible("_RECOVERY"), false);
     assert.equal(isPickerVaultVisible("_hygiene-trash"), false);
     assert.equal(isPickerVaultVisible("lxndrhbrt"), false);
-    assert.ok(PICKER_VAULT_ALLOWLIST.includes("HSEQ Sync"));
+    assert.ok(!PICKER_VAULT_ALLOWLIST.includes("HSEQ Sync"));
   });
 
   it("filterPickerHits keeps web + allowlist, drops private", () => {
     const filtered = filterPickerHits([
-      { kind: "file", path: "/HSEQ Sync/a.md", title: "a.md", id: "1" },
+      { kind: "file", path: "/ASI, BS. UWS, QM, EM/a.md", title: "a.md", id: "1" },
+      { kind: "file", path: "/HSEQ Sync/b.md", title: "b.md", id: "6" },
       { kind: "file", path: "/Privat/secret.md", title: "secret.md", id: "2" },
       { kind: "file", path: "/memory-wiki/x.md", title: "x.md", id: "3" },
       { kind: "file", path: "/Peniel/p.md", title: "p.md", id: "4" },
@@ -371,11 +372,12 @@ describe("hub + picker allowlist", () => {
         hits: [
           { kind: "file", path: "/Privat/a.md", title: "a.md" },
           { kind: "file", path: "/HSEQ Sync/b.md", title: "b.md" },
+          { kind: "file", path: "/ASI, BS. UWS, QM, EM/c.md", title: "c.md" },
         ],
       },
       "x",
     );
     assert.equal(preview.hits.length, 1);
-    assert.equal(hitVaultLabel(preview.hits[0]), "HSEQ Sync");
+    assert.equal(hitVaultLabel(preview.hits[0]), "ASI, BS. UWS, QM, EM");
   });
 });

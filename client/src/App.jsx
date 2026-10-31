@@ -1367,6 +1367,7 @@ export default function App() {
     // verlorene Stufen vorhergehender Updater ab (siehe upsertStreaming).
     const stepsSnapshot = [...stepsRef.current];
     const draftsSnapshot = [...draftsRef.current];
+    const traceSnapshot = traceRef.current;
     setMessages((prev) =>
       prev.map((m) =>
         m.streaming
@@ -1382,7 +1383,7 @@ export default function App() {
                     drafts: m.drafts?.length ? m.drafts : draftsSnapshot,
                   }
                 : {}),
-              ...(traceRef.current ? { trace: traceRef.current } : {}),
+              ...(traceSnapshot ? { trace: traceSnapshot } : {}),
             }
           : m,
       ),

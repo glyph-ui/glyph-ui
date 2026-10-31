@@ -355,6 +355,9 @@ function _looksUrl(t) {
 function _linkifyInlineCode(part) {
   return part.replace(/`([^`\n]+)`/g, (m, inner) => {
     const t = inner.trim();
+    // Fertiger Markdown-Link in Backticks: nur die Backticks entfernen, sonst
+    // bleibt er Code statt Chip (Meldung 2026-10-31, Search-Antwort).
+    if (/^\[[^\]\n]+\]\((?:https?:\/\/|www\.|\/)[^)\s]+\)$/i.test(t)) return t;
     if (_looksUrl(t)) {
       const href = _urlHref(t);
       return `[${siteLabel(href)}](${href})`;

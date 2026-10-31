@@ -187,6 +187,16 @@ describe("linkifyAnswer", () => {
     assert.ok(!out.includes("] ["), out);
   });
 
+  it("entpackt fertige Markdown-Links aus Backticks (Chip statt Code)", () => {
+    const out = linkifyAnswer(
+      "- `[Betriebsanweisung Leitern](https://collab.dvb.bayern/x/ba.pdf)`\n- `[Platzhalter](URL)`",
+    );
+    assert.ok(out.includes("- [Betriebsanweisung Leitern](https://collab.dvb.bayern/x/ba.pdf)"), out);
+    assert.ok(!out.includes("`[Betriebsanweisung"), out);
+    assert.ok(out.includes("`[Platzhalter](URL)`"), out);
+    assert.equal((out.match(/\]\(https:/g) || []).length, 1, out);
+  });
+
   it("macht nackte Domains und http-URLs klickbar", () => {
     const out = linkifyAnswer("Siehe bghm.de/abc.html und https://example.com/x.pdf");
     assert.ok(out.includes("[bghm.de](https://bghm.de/abc.html)"), out);

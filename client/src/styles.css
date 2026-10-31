@@ -9747,6 +9747,19 @@ button.send.send-eyes-away .graph-pupils {
   letter-spacing: 0.04em;
   color: color-mix(in srgb, var(--text) 42%, var(--muted));
 }
+.web-gate-credit {
+  /* .web-gate hat gap: 14px — als Unterzeile dicht an „Zugang nur …“ */
+  margin-top: -8px;
+  opacity: 0.8;
+}
+/* Ersteller-Zeile am Ende des Buchs — gleiche leise Schrift wie am Web-Tor */
+.app-credit {
+  margin: 1.5rem 0 0.5rem;
+  text-align: center;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--text) 42%, var(--muted));
+}
 .web-password-backdrop {
   position: fixed;
   inset: 0;

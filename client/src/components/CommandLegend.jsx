@@ -4,6 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SideDrawer } from "./SideDrawer.jsx";
+import { APP_CREDIT } from "../utils/credit.js";
 import { composerModeOptions } from "../../../shared/composerActions.mjs";
 
 const COMMAND_LEGEND = [
@@ -692,6 +693,7 @@ function CommandLegend({
             )}
           </div>
         )}
+        <p className="app-credit">{APP_CREDIT}</p>
     </SideDrawer>
   );
 }

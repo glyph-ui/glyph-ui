@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { APP_CREDIT } from "../utils/credit.js";
 
 export function WebGate({ onUnlocked, hint }) {
   const [password, setPassword] = useState("");
@@ -129,6 +130,7 @@ export function WebGate({ onUnlocked, hint }) {
         </button>
       </form>
       <p className="web-gate-foot">Zugang nur für berechtigte Personen</p>
+      <p className="web-gate-foot web-gate-credit">{APP_CREDIT}</p>
     </div>
   );
 }

@@ -49,7 +49,7 @@ export function WebGate({ onUnlocked, hint }) {
       }
       onUnlocked?.();
       // Nach dem Login hart neu laden: die Seite VOR dem Tor lief mit altem
-      // Bundle und ohne WS-Token — Search-Modus, 27B-Schalter und „Im Vault
+      // Bundle und ohne WS-Token — Search-Modus und „Im Vault
       // suchen" erschienen erst nach einem manuellen Refresh. Der Reload
       // liefert frisches index.html (mit Token) und den vollen Zustand.
       window.location.reload();
@@ -63,8 +63,23 @@ export function WebGate({ onUnlocked, hint }) {
   return (
     <div className="web-gate">
       <form className="web-gate-card" onSubmit={(e) => void submit(e)}>
-        <p className="web-gate-kicker">glyph-ui.com</p>
-        <h1 className="web-gate-title">Glyph</h1>
+        <h1 className="web-gate-logo">
+          <img
+            src="/wordmark-negativ.png"
+            alt="Glyph"
+            className="web-gate-wordmark web-gate-wordmark--dark"
+          />
+          <img
+            src="/wordmark-hell.png"
+            alt="Glyph"
+            className="web-gate-wordmark web-gate-wordmark--light"
+          />
+        </h1>
+        <p className="web-gate-kicker">
+          <span className="web-gate-kicker-dot" aria-hidden="true">•</span>
+          glyph-ui.com
+        </p>
+        <div className="web-gate-divider" aria-hidden="true" />
         <p className="web-gate-copy">
           {hint || "Geschützter Arbeitsbereich – bitte Kennwort eingeben."}
         </p>
@@ -106,7 +121,11 @@ export function WebGate({ onUnlocked, hint }) {
           </p>
         ) : null}
         <button type="submit" className="web-gate-submit" disabled={busy || !password}>
-          {busy ? "…" : "Öffnen"}
+          {busy ? (
+            <img src="/icon-192.png" alt="" className="web-gate-spinner" />
+          ) : (
+            "Öffnen"
+          )}
         </button>
       </form>
       <p className="web-gate-foot">Zugang nur für berechtigte Personen</p>

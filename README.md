@@ -1,4 +1,9 @@
-# Glyph
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./client/public/wordmark-negativ.png">
+    <img src="./client/public/wordmark-hell.png" alt="Glyph" width="360">
+  </picture>
+</p>
 
 **Browser-Hülle für Coding-Agenten** über ACP (Agent Client Protocol) — **keine eigene KI**.
 Du bringst Grok / ^_tick / °_Agent mit; Glyph streamt Chat, Tools und Status.

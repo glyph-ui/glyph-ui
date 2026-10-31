@@ -9564,6 +9564,30 @@ button.send.send-eyes-away .graph-pupils {
   text-align: center;
 }
 
+.web-gate-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.web-gate-wordmark {
+  width: min(230px, 68%);
+  height: auto;
+  display: block;
+}
+
+.web-gate-wordmark--light {
+  display: none;
+}
+
+:root[data-theme="light"] .web-gate-wordmark--dark {
+  display: none;
+}
+
+:root[data-theme="light"] .web-gate-wordmark--light {
+  display: block;
+}
+
 .web-gate-kicker {
   margin: 0;
   display: flex;
@@ -9577,27 +9601,12 @@ button.send.send-eyes-away .graph-pupils {
   color: color-mix(in srgb, var(--text) 55%, var(--muted));
 }
 
-.web-gate-kicker::before {
-  content: "";
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--gold);
+.web-gate-kicker-dot {
+  color: var(--gold);
+  font-size: 0.8em;
 }
 
-/* Wortzeichen — leicht, gesperrt, mit Goldhärchen als Signatur */
-.web-gate-title {
-  margin: 6px 0 0;
-  font-size: 2.15rem;
-  font-weight: 300;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  line-height: 1.1;
-}
-
-.web-gate-title::after {
-  content: "";
-  display: block;
+.web-gate-divider {
   width: 26px;
   height: 1px;
   margin: 16px auto 4px;
@@ -9689,6 +9698,21 @@ button.send.send-eyes-away .graph-pupils {
   transform: translateY(0);
 }
 
+/* Arbeitsprozess: Feder+Punkte-Icon dreht, solange /api/web-gate antwortet */
+.web-gate-spinner {
+  width: 1.15rem;
+  height: 1.15rem;
+  vertical-align: middle;
+  border-radius: 3px;
+  animation: web-gate-spin 1s linear infinite;
+}
+
+@keyframes web-gate-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .web-gate-input,
   .web-gate-submit {
@@ -9696,6 +9720,9 @@ button.send.send-eyes-away .graph-pupils {
   }
   .web-gate-submit:not(:disabled):hover {
     transform: none;
+  }
+  .web-gate-spinner {
+    animation-duration: 2.4s;
   }
 }
 
@@ -10024,8 +10051,8 @@ html.web-surface #root {
     padding: 28px 18px;
   }
 
-  .web-gate-title {
-    font-size: 1.5rem;
+  .web-gate-wordmark {
+    width: min(190px, 72%);
   }
 
   .web-gate-input,

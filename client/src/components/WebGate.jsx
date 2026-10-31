@@ -122,7 +122,7 @@ export function WebGate({ onUnlocked, hint }) {
         ) : null}
         <button type="submit" className="web-gate-submit" disabled={busy || !password}>
           {busy ? (
-            <img src="/icon-192.png" alt="" className="web-gate-spinner" />
+            <img src="/glyph-quill-writing.svg" alt="" className="web-gate-spinner" />
           ) : (
             "Öffnen"
           )}

@@ -50,21 +50,15 @@ function useElapsedSeconds(streaming) {
   return elapsed;
 }
 
-/**
- * Aktivitäts-Steine: goldene Steine (zu 3/4 gefüllt), während der Recherche
- * wandert ein dunkler Stein von links nach rechts hindurch.
- */
+/** Glyph-Feder: schreibt, solange der Agent arbeitet; danach ruhend. */
 function ActivityMark({ live }) {
   return (
-    <span
-      className={`activity-mark${live ? " activity-mark--live" : ""}`}
+    <img
+      src={live ? "/glyph-quill-writing.svg" : "/glyph-quill.svg"}
+      alt=""
       aria-hidden="true"
-    >
-      <span className="activity-dot" />
-      <span className="activity-dot" />
-      <span className="activity-dot" />
-      {live ? <span className="activity-traveler" /> : null}
-    </span>
+      className="activity-quill"
+    />
   );
 }
 

@@ -1,6 +1,6 @@
 /**
- * °_Agent ACP → HTTP /chat: Apfel an = Arbeits-Vault-Treffer.
- * Fehlt das Flag: vault_search false → Engine: memory-wiki + offenes Web.
+ * °_Agent ACP → HTTP /chat: Modus Vault = Arbeits-Vault + memory-wiki.
+ * Fehlt das Flag: vault_search false → Engine: nur offenes Web.
  * Copyright (c) 2026 Alexander Hubert
  * SPDX-License-Identifier: MIT
  */

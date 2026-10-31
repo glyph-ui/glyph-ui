@@ -1,7 +1,9 @@
 #!/bin/bash
-# Install the G-Schlange (Snack) app icon into the Safari Web App / Dock entry.
+# Install the Glyph app icon into the Safari Web App / Dock entry.
 #
 # Source of truth: assets/app-icon.png
+# Optional: assets/app-icon-small.png — kräftigere Fassung für 16/32 px
+#           (Favicon, Tab, kleine Iconset-Größen)
 # Pipeline:
 #   1. prepare-mac-icon.py — scale + macOS squircle mask (transparent corners)
 #   2. Build .icns + web favicons from the prepared master
@@ -16,6 +18,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC_RAW="$ROOT/assets/app-icon.png"
+SRC_SMALL="$ROOT/assets/app-icon-small.png"
 PREPARE="$ROOT/scripts/prepare-mac-icon.py"
 ICONSET="$ROOT/scripts/assets/AppIcon.iconset"
 ICNS="$ROOT/scripts/assets/AppIcon.icns"
@@ -39,6 +42,11 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 PREPARED="$TMP/app-icon-mac.png"
 python3 "$PREPARE" "$SRC_RAW" "$PREPARED" --size 1024 --scale "$ICON_SCALE"
+PREPARED_SMALL="$PREPARED"
+if [[ -f "$SRC_SMALL" ]]; then
+  PREPARED_SMALL="$TMP/app-icon-small-mac.png"
+  python3 "$PREPARE" "$SRC_SMALL" "$PREPARED_SMALL" --size 1024 --scale "$ICON_SCALE"
+fi
 
 # Also refresh the checked-in 1024 master used by iconutil / setIcon
 mkdir -p "$ROOT/scripts/assets"
@@ -62,8 +70,12 @@ declare -a SIZES=(
 for entry in "${SIZES[@]}"; do
   sz="${entry%%:*}"
   name="${entry#*:}"
+  src="$SRC_RAW"
+  if [[ "$sz" -le 32 && -f "$SRC_SMALL" ]]; then
+    src="$SRC_SMALL"
+  fi
   # Re-apply mask at each size so small icons keep clean AA corners
-  python3 "$PREPARE" "$SRC_RAW" "$TMP/$name" --size "$sz" --scale "$ICON_SCALE"
+  python3 "$PREPARE" "$src" "$TMP/$name" --size "$sz" --scale "$ICON_SCALE"
 done
 
 rm -rf "$ICONSET"
@@ -81,13 +93,13 @@ echo "→ Web / PWA icons…"
 mkdir -p "$ROOT/client/public"
 # PWA / apple-touch already expect rounded presentation — use prepared master
 sips -z 180 180 "$PREPARED" --out "$ROOT/client/public/apple-touch-icon.png" >/dev/null
-sips -z 32 32 "$PREPARED" --out "$ROOT/client/public/favicon-32.png" >/dev/null
+sips -z 32 32 "$PREPARED_SMALL" --out "$ROOT/client/public/favicon-32.png" >/dev/null
 sips -z 192 192 "$PREPARED" --out "$ROOT/client/public/icon-192.png" >/dev/null
 sips -z 512 512 "$PREPARED" --out "$ROOT/client/public/icon-512.png" >/dev/null
 
 python3 - <<PY
 from PIL import Image
-im = Image.open("$PREPARED").convert("RGBA")
+im = Image.open("$PREPARED_SMALL").convert("RGBA")
 sizes = [(16, 16), (32, 32), (48, 48)]
 imgs = [im.resize(s, Image.Resampling.LANCZOS) for s in sizes]
 imgs[0].save("$ROOT/client/public/favicon.ico", format="ICO", sizes=sizes)
@@ -137,7 +149,7 @@ killall iconservicesagent 2>/dev/null || true
 killall Dock 2>/dev/null || true
 
 echo
-echo "G-Schlange icon installed (macOS rounded + scaled)."
+echo "Glyph icon installed (macOS rounded + scaled)."
 echo "  App:     $APP"
 echo "  Master:  $SRC_RAW"
 echo "  Prepared:$MASTER  (scale=$ICON_SCALE)"

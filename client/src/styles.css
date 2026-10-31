@@ -411,6 +411,25 @@ body,
   gap: 0.4rem 0.55rem;
 }
 
+.app-wordmark {
+  height: 1.3rem;
+  width: auto;
+  display: block;
+  vertical-align: baseline;
+}
+
+.app-wordmark--light {
+  display: none;
+}
+
+:root[data-theme="light"] .app-wordmark--dark {
+  display: none;
+}
+
+:root[data-theme="light"] .app-wordmark--light {
+  display: block;
+}
+
 /* Build mark next to “Glyph” — #0.9.0 from git count 90 */
 .app-build {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;

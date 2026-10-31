@@ -4017,7 +4017,16 @@ export default function App() {
         <header className="top">
           <div>
             <h1>
-              Glyph
+              <img
+                src="/wordmark-negativ.png"
+                alt="Glyph"
+                className="app-wordmark app-wordmark--dark"
+              />
+              <img
+                src="/wordmark-hell.png"
+                alt="Glyph"
+                className="app-wordmark app-wordmark--light"
+              />
               {webSurface || GLYPH_BUILD <= 0 ? null : (
                 <span
                   className={`app-build${buildMismatch ? " app-build--drift" : ""}`}

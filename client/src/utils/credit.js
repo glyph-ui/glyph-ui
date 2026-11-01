@@ -1,2 +1,2 @@
-/** Ersteller-Zeile (Anmeldeseite, Buch) — klein, damit klar ist, wem Glyph gehört. */
-export const APP_CREDIT = "Glyph · © 2026 Alexander Hubert";
+/** Ersteller-Zeile (Anmeldeseite, Buch) — klein, damit klar ist, wem glyph-ui gehört. */
+export const APP_CREDIT = "glyph-ui · © 2026 Alexander Hubert";

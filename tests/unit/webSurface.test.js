@@ -20,6 +20,7 @@ import {
   normalizeRequestPath,
   parseCookie,
   publicWebAccess,
+  securityHeaders,
   sessionTtlS,
   WEB_SESSION_TTL_S,
   validateNewWebPassword,
@@ -351,5 +352,20 @@ describe("web gate brake", () => {
       "203.0.113.7",
     );
     assert.equal(webClientKey({ headers: {}, socket: { remoteAddress: "127.0.0.1" } }), "127.0.0.1");
+  });
+});
+
+describe("securityHeaders", () => {
+  it("sets nosniff and frame protection everywhere", () => {
+    for (const web of [true, false]) {
+      const h = securityHeaders(web);
+      assert.equal(h["X-Content-Type-Options"], "nosniff");
+      assert.equal(h["X-Frame-Options"], "SAMEORIGIN");
+    }
+  });
+
+  it("sends HSTS only on the web surface", () => {
+    assert.ok(securityHeaders(true)["Strict-Transport-Security"]);
+    assert.equal(securityHeaders(false)["Strict-Transport-Security"], undefined);
   });
 });

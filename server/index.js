@@ -63,6 +63,7 @@ import {
   parseCookie,
   parseStoredWebSessions,
   publicWebAccess,
+  securityHeaders,
   serializeWebSessions,
   validateNewWebPassword,
   webClientKey,
@@ -739,6 +740,15 @@ async function buildPromptBlocks(text, attachments = []) {
 
 const app = express();
 const httpServer = createServer(app);
+
+// Kein „X-Powered-By: Express“ — verrät nur, womit der Server läuft.
+app.disable("x-powered-by");
+app.use((req, res, next) => {
+  for (const [k, v] of Object.entries(securityHeaders(isWebRequest(req)))) {
+    res.setHeader(k, v);
+  }
+  next();
+});
 
 /** Filled after GrokBridge is defined. */
 let seats;

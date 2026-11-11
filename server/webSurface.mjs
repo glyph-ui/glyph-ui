@@ -282,6 +282,24 @@ export function isWebOrigin(origin, extra = process.env.GLYPH_WEB_HOSTS) {
 }
 
 /**
+ * Sicherheits-Kopfzeilen für jede Antwort.
+ *
+ * nosniff: der Browser hält sich an den angegebenen Dateityp. SAMEORIGIN:
+ * fremde Seiten dürfen Glyph nicht in einen Rahmen laden (eigene PDF-Rahmen
+ * bleiben erlaubt). HSTS nur auf glyph-ui.com: dort immer HTTPS, ohne
+ * Subdomains. Keine CSP — die könnte die PDF-Anzeige stören.
+ * @param {boolean} web
+ */
+export function securityHeaders(web) {
+  const h = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN",
+  };
+  if (web) h["Strict-Transport-Security"] = "max-age=15552000";
+  return h;
+}
+
+/**
  * Bremse gegen Passwort-Raten am Web-Tor.
  *
  * Pro Besucher 5 Fehlversuche in 10 Minuten, danach Wartezeit bis der älteste

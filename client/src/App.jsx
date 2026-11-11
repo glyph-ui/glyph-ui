@@ -3486,6 +3486,20 @@ function AppInner() {
       GLYPH_BUILD !== bridgeMeta.build,
   );
 
+  // Bridge neuer als die geladene Seite: der Tab hält ein altes Bundle. Einmal
+  // je Bridge-Build selbst neu laden (sessionStorage verhindert eine Schleife).
+  useEffect(() => {
+    if (!buildMismatch || !(bridgeMeta.build > GLYPH_BUILD)) return;
+    const key = `glyph-reloaded-for-${bridgeMeta.build}`;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+    } catch {
+      return;
+    }
+    window.location.reload();
+  }, [buildMismatch, bridgeMeta?.build]);
+
   const composerPlaceholder = useMemo(() => {
     if (!connected) {
       return `Offline — tippen ok · / für Skills · senden nach ${agentLabel}-Verbindung`;
@@ -4183,7 +4197,13 @@ function AppInner() {
             {" · "}
             Bridge <code>{glyphBuildLabel(bridgeMeta.build)}</code>
             {" — "}
-            <code>npm run service:install</code>
+            {bridgeMeta.build > GLYPH_BUILD ? (
+              <button type="button" onClick={() => window.location.reload()}>
+                Seite neu laden
+              </button>
+            ) : (
+              "Dienst neu starten"
+            )}
           </div>
         ) : null}
         {showStuffed ? (
@@ -4209,7 +4229,8 @@ function AppInner() {
               ) : (
                 <>
                   1. Snack tippen = Stopp · 2. Nachricht nochmal senden · 3. Wenn
-                  weiter tot: <code>npm run service:install</code>
+                  weiter tot:{" "}
+                  <code>sudo launchctl kickstart -k system/com.lxndrhbrt.glyph-ui</code>
                 </>
               )}
             </span>

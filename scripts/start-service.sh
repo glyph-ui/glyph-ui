@@ -57,6 +57,14 @@ export NO_COLOR=1
 
 cd "$ROOT"
 
+# Client bei jedem Start neu bauen: die Build-Nummer (Commit-Anzahl) wird beim
+# Bauen eingebrannt und vom Server beim Start gelesen. Ohne Neubau zeigte die UI
+# nach jedem Commit ein Versions-Banner. Schlägt der Bau fehl, startet der
+# Dienst mit dem vorhandenen client/dist.
+if ! (cd "$ROOT" && npm run -s build >/dev/null 2>&1); then
+  echo "client build failed — starting with existing client/dist" >&2
+fi
+
 if [[ ! -d "$ROOT/client/dist" ]]; then
   echo "client/dist missing — run: npm run build" >&2
   exit 1

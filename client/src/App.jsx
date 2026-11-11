@@ -61,6 +61,7 @@ import {
   IconRefresh,
   IconHeart,
   IconKey,
+  IconLogout,
   IconLink,
   IconLinkOff,
   IconRewind,
@@ -79,7 +80,7 @@ import {
 } from "./utils/attachments.js";
 import { invalidateWsToken, wsUrl } from "./utils/format.js";
 import { resolveSeat, seatFetch } from "./utils/seat.js";
-import { surfaceHeaderControls } from "./utils/webSurface.js";
+import { surfaceHeaderControls, webLogout } from "./utils/webSurface.js";
 import { DONATE_TOOLTIP, DONATE_URL } from "./utils/donate.js";
 import { modelHudText, shortModelLabel } from "./utils/assistantTrace.js";
 import {
@@ -4096,6 +4097,20 @@ export default function App() {
                         aria-label="UI neu laden"
                       >
                         <IconRefresh size={18} />
+                      </button>
+                    ) : null}
+                    {headerControls.logout ? (
+                      <button
+                        type="button"
+                        className="pill pill-btn pill-btn--icon"
+                        onClick={() => {
+                          if (!window.confirm("Auf diesem Gerät abmelden?")) return;
+                          void webLogout().finally(() => window.location.reload());
+                        }}
+                        title="Abmelden"
+                        aria-label="Abmelden"
+                      >
+                        <IconLogout size={18} />
                       </button>
                     ) : null}
                   </div>

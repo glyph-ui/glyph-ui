@@ -70,6 +70,7 @@ import {
   WEB_SESSION_TTL_S,
   sessionTtlS,
   WEB_SESSIONS_MAX,
+  clearWebCookieHeader,
 } from "./webSurface.mjs";
 import {
   filterHits as webFilterHits,
@@ -1266,6 +1267,29 @@ app.post("/api/web-gate", (req, res) => {
     required: true,
     access: publicWebAccess(grant.access),
   });
+});
+
+/**
+ * Abmelden auf diesem Gerät: Sitzung löschen, Chat-Sitz beenden, Cookie leeren.
+ * Andere Geräte bleiben angemeldet.
+ */
+app.post("/api/web-gate/logout", (req, res) => {
+  if (!isWebRequest(req)) {
+    res.json({ ok: true, required: false });
+    return;
+  }
+  const origin = req.get("origin") || "";
+  if (origin && !isAllowedWsOrigin(origin)) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+  const token = webSessionToken(req);
+  if (token && webSessions.delete(token)) {
+    stopWebSeat(token);
+    void persistWebSessions().catch(() => {});
+  }
+  res.setHeader("Set-Cookie", clearWebCookieHeader());
+  res.json({ ok: true });
 });
 
 app.post("/api/web-gate/password", async (req, res) => {

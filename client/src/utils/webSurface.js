@@ -21,5 +21,20 @@ export function isWebSurfaceHost(hostname) {
  */
 export function surfaceHeaderControls(seat) {
   const web = seat === "web";
-  return { reload: web, quit: !web };
+  return { reload: web, quit: !web, logout: web };
+}
+
+/**
+ * Auf diesem Gerät abmelden. Fehler zählen nicht: danach lädt die Seite neu
+ * und zeigt das Web-Tor, falls die Sitzung weg ist.
+ */
+export async function webLogout(fetchImpl = globalThis.fetch) {
+  try {
+    await fetchImpl("/api/web-gate/logout", {
+      method: "POST",
+      credentials: "same-origin",
+    });
+  } catch {
+    /* offline o. ä. — Neuladen klärt den Stand */
+  }
 }

@@ -6,6 +6,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   agentAllowedOnSeat,
+  clearWebCookieHeader,
   createWebGateBrake,
   defaultAgentIdForSeat,
   extraWebHosts,
@@ -31,6 +32,7 @@ import {
 import {
   isWebSurfaceHost,
   surfaceHeaderControls,
+  webLogout,
 } from "../../client/src/utils/webSurface.js";
 
 describe("grantWebAccess", () => {
@@ -200,9 +202,9 @@ describe("client host helper", () => {
 
 describe("surfaceHeaderControls", () => {
   it("puts Neu Laden on the web header, not Beenden", () => {
-    assert.deepEqual(surfaceHeaderControls("web"), { reload: true, quit: false });
-    assert.deepEqual(surfaceHeaderControls("desk"), { reload: false, quit: true });
-    assert.deepEqual(surfaceHeaderControls("phone"), { reload: false, quit: true });
+    assert.deepEqual(surfaceHeaderControls("web"), { reload: true, quit: false, logout: true });
+    assert.deepEqual(surfaceHeaderControls("desk"), { reload: false, quit: true, logout: false });
+    assert.deepEqual(surfaceHeaderControls("phone"), { reload: false, quit: true, logout: false });
   });
 });
 
@@ -367,5 +369,27 @@ describe("securityHeaders", () => {
   it("sends HSTS only on the web surface", () => {
     assert.ok(securityHeaders(true)["Strict-Transport-Security"]);
     assert.equal(securityHeaders(false)["Strict-Transport-Security"], undefined);
+  });
+});
+
+describe("web logout", () => {
+  it("clears the session cookie with the same attributes", () => {
+    const c = clearWebCookieHeader();
+    assert.match(c, /^glyph_web=;/);
+    assert.match(c, /Max-Age=0/);
+    assert.match(c, /Path=\//);
+    assert.match(c, /HttpOnly/);
+  });
+
+  it("posts to the logout route and survives a network error", async () => {
+    const calls = [];
+    await webLogout(async (url, opts) => {
+      calls.push([url, opts.method]);
+      return { ok: true };
+    });
+    assert.deepEqual(calls, [["/api/web-gate/logout", "POST"]]);
+    await webLogout(async () => {
+      throw new Error("offline");
+    });
   });
 });

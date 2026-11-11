@@ -322,6 +322,28 @@ function IconKey({ size = 18 }) {
   );
 }
 
+/** Abmelden: Tür mit Pfeil nach draußen. */
+function IconLogout({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M10 4H6.5A2.5 2.5 0 0 0 4 6.5v11A2.5 2.5 0 0 0 6.5 20H10"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M14.5 8 19 12l-4.5 4M19 12H9.5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function IconLock({ size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -594,6 +616,7 @@ export {
   IconStop,
   IconLock,
   IconKey,
+  IconLogout,
   IconHeart,
   IconTrash,
   IconLink,

@@ -356,6 +356,11 @@ export function createWebGateBrake({
   };
 }
 
+/** Set-Cookie, das die Web-Sitzung im Browser löscht (gleiche Attribute wie beim Setzen). */
+export function clearWebCookieHeader() {
+  return `${WEB_COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0; Secure`;
+}
+
 /** Cookie Max-Age (30 Tage). Sitzungen auf Disk nutzen dasselbe Fenster. */
 export const WEB_SESSION_TTL_S = 2592000;
 /**

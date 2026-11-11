@@ -103,7 +103,6 @@ import { WebGate } from "./components/WebGate.jsx";
 import { WebPasswordDialog } from "./components/WebPasswordDialog.jsx";
 import { ActiveTaskBar } from "./components/ActiveTaskBar.jsx";
 import ProviderSwitch from "./components/ProviderSwitch.jsx";
-import LocalModelToggle from "./components/LocalModelToggle.jsx";
 import { GRANT_DEMO_REQ, TASK_DEMO } from "./utils/codeGrants.js";
 import {
   TRANSCRIPT_WINDOW,
@@ -653,8 +652,6 @@ export default function App() {
    * Lokales Modell (27B): Zustand + echtes Kontextfenster.
    * Steht hier oben, weil der LVL-Balken weiter unten damit rechnet.
    */
-  const [localModel, setLocalModel] = useState(null);
-  const [localAction, setLocalAction] = useState(false);
 
   // —— Voice (xAI primary · OpenRouter fallback) ——
   const [voiceAvailable, setVoiceAvailable] = useState(false);
@@ -3101,20 +3098,7 @@ export default function App() {
   // Effective model for window map (last assistant trace beats session signals)
   const effectiveModel = lastTraceModel || contextInfo.model || "";
 
-  /**
-   * Lokaler Kopf: eigenes Kontextfenster. Der 27B läuft mit 16k, nicht mit der
-   * 256k-Skala von °_Agent — sonst zeigt der Balken ~1 %, während der Kontext
-   * fast voll ist. Der Wert kommt live vom Modellserver (/api/local/status).
-   */
-  const isLocalHead =
-    String(modelHud?.provider || "") === "local" ||
-    Boolean(localModel?.providerIsLocal);
-  const meterWindow =
-    isLocalHead && Number(localModel?.contextWindow) > 0
-      ? Number(localModel.contextWindow)
-      : isLocalHead
-        ? 16_384
-        : contextInfo.window;
+  const meterWindow = contextInfo.window;
 
   /**
    * Unsichtbarer Prompt-Anteil (System-Prompt + Precheck + Werkzeuge).
@@ -3124,11 +3108,9 @@ export default function App() {
   const meterOverhead =
     messages.length === 0
       ? 0
-      : isLocalHead
-        ? PROMPT_OVERHEAD_TOKENS.local
-        : isCloudModelProfile(agent?.id || "")
-          ? PROMPT_OVERHEAD_TOKENS.cloud
-          : 0;
+      : isCloudModelProfile(agent?.id || "")
+        ? PROMPT_OVERHEAD_TOKENS.cloud
+        : 0;
   const grokHudText = useMemo(() => {
     const short = shortModelLabel(effectiveModel);
     return short === "—" ? "CLI" : short;
@@ -3422,75 +3404,6 @@ export default function App() {
     }
   }, [agent?.id]);
 
-  /**
-   * Lokales Modell (Ternary Bonsai 2 27B).
-   * Der Prozess belegt ~8 GB, deshalb wird sein Zustand gepollt (schneller,
-   * solange er startet) und über ProviderSwitch / LocalModelToggle bedient.
-   */
-  const refreshLocalModel = useCallback(async () => {
-    try {
-      const res = await fetch("/api/local/status");
-      if (res.ok) setLocalModel(await res.json());
-    } catch {
-      /* Brücke nicht erreichbar */
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isCloudModelProfile(agent?.id || "")) return undefined;
-    void refreshLocalModel();
-    const ms = localModel?.state === "starting" ? 1500 : 10000;
-    const id = window.setInterval(() => {
-      void refreshLocalModel();
-      // Solange der lokale Modus arbeitet, Aktivität melden — sonst hält die
-      // Speicher-Bremse eine lange Antwort für Leerlauf (v. a. ohne /metrics).
-      if (
-        localModel?.state === "ready" &&
-        (busyRef.current || streamingRef.current)
-      ) {
-        void fetch("/api/local/touch", { method: "POST" }).catch(() => {});
-      }
-    }, ms);
-    return () => window.clearInterval(id);
-  }, [agent?.id, localModel?.state, refreshLocalModel]);
-
-  /** 27B schlafen legen — gibt die ~8 GB frei. */
-  const handleLocalSleep = useCallback(async () => {
-    setLocalAction(true);
-    try {
-      await fetch("/api/local/stop", { method: "POST" }).catch(() => {});
-      void refreshLocalModel();
-    } finally {
-      setLocalAction(false);
-    }
-  }, [refreshLocalModel]);
-
-  /**
-   * Web-Fläche: ein Schalter für „lokal an/aus".
-   * Ausschalten legt das Modell wirklich schlafen — der wirksamste Schutz
-   * gegen ein dauerhaft belegtes Mac mini.
-   */
-  const handleLocalToggle = useCallback(
-    async (enabled) => {
-      setLocalAction(true);
-      try {
-        await fetch("/api/local/select", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ enabled }),
-        }).catch(() => {});
-        await fetch(enabled ? "/api/local/start" : "/api/local/stop", {
-          method: "POST",
-        }).catch(() => {});
-        void refreshLocalModel();
-        void refreshModelHud();
-      } finally {
-        setLocalAction(false);
-      }
-    },
-    [refreshLocalModel, refreshModelHud],
-  );
-
   /** Read-only poll for the model pill. Writes: connect, Graph-save, mismatch-Klick. */
   useEffect(() => {
     if (!isCloudModelProfile(agent?.id || "")) {
@@ -3531,31 +3444,17 @@ export default function App() {
       const kind =
         agent?.id === "_tick" || agent?.id === "_code" ? "code" : "agent";
       try {
-        if (mode === "local") {
-          // Lokaler Kopf: über den eigenen, engen Endpunkt setzen (so geht es
-          // auch auf der Web-Fläche, wo /api/bindings gesperrt ist) und wecken.
-          await fetch("/api/local/select", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ enabled: true, kind }),
-          });
-          await fetch("/api/local/start", { method: "POST" }).catch(() => {});
-          void refreshLocalModel();
-        } else {
-          await fetch("/api/bindings", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ provider: mode, kind }),
-          });
-          // Der Modellprozess bleibt wach (schneller Rückwechsel) und schläft
-          // über das Auto-Schlafen ein; von Hand über den Menüpunkt.
-        }
+        await fetch("/api/bindings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider: mode, kind }),
+        });
       } catch {
         /* ignore */
       }
       void refreshModelHud();
     },
-    [agent?.id, refreshModelHud, refreshLocalModel],
+    [agent?.id, refreshModelHud],
   );
 
   /** Stale UI vs running bridge — only then surface a banner. */
@@ -4214,23 +4113,8 @@ export default function App() {
                 isPeak={Boolean(modelHud?.isPeak)}
                 mismatch={Boolean(modelHud?.mismatch)}
                 disabled={isWorking || agentSwitching}
-                localState={localModel?.state || "sleeping"}
-                localBusy={localAction}
                 cloudOk={modelHud?.cloudOk !== false}
-                onChange={(mode) =>
-                  void handleProviderChange(mode)
-                }
-                onSleep={() => void handleLocalSleep()}
-              />
-            ) : null}
-            {webSurface && isCloudModelProfile(agent?.id || "") ? (
-              <LocalModelToggle
-                active={Boolean(localModel?.providerIsLocal)}
-                state={localModel?.state || "sleeping"}
-                busy={localAction}
-                disabled={isWorking || agentSwitching}
-                locked={webRole === "guest"}
-                onToggle={(enabled) => void handleLocalToggle(enabled)}
+                onChange={(mode) => void handleProviderChange(mode)}
               />
             ) : null}
             {headerControls.quit ? (

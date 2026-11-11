@@ -3,11 +3,8 @@
  * Slash in der ID = Router-Slug (OpenRouter oder Orca); ohne Slash = Direct-ID.
  */
 
-export const PROVIDER_MODES = ["direct", "openrouter", "hybrid", "local"];
+export const PROVIDER_MODES = ["direct", "openrouter", "hybrid"];
 
-/** Lokaler Kopf (Ternary Bonsai 2 27B) — Modell + Anzeigekürzel. */
-export const LOCAL_MODEL_ID = "bonsai-2-27b-uncensored";
-export const LOCAL_MODEL_LABEL = "27B";
 export const LOCAL_HOST_DEFAULT = "http://127.0.0.1:8080/v1";
 
 export function normalizeProvider(value) {
@@ -46,7 +43,6 @@ export function providerLabel(mode, opts = {}) {
   const m = normalizeProvider(mode);
   if (m === "direct") return "Direkt";
   if (m === "openrouter") return "Router";
-  if (m === "local") return "Lokal";
   return opts.isPeak ? "Hybrid · Peak → Router" : "Hybrid";
 }
 
@@ -135,13 +131,8 @@ export function modelHudFromBindings(data = {}, profileId = "") {
         "hybrid",
   );
   const isPeak = Boolean(data.providerPeak || data.modelsActive?.provider_peak);
-  // Lokaler Kopf: das Modell hängt am Provider-Modus, nicht am Cloud-Paar.
   const label =
-    prov === "local"
-      ? LOCAL_MODEL_LABEL
-      : primary && fb
-        ? `${primary} → ${fb}`
-        : primary || "—";
+    primary && fb ? `${primary} → ${fb}` : primary || "—";
   const liveLabel = String(data.modelsActive?.active?.label || "").trim();
   // Cloud nutzbar? Ohne Schlüssel kann kein Cloud-Modus antworten. Das ist die
   // einzige Cloud-Störung, die hier bekannt ist — ein Laufzeitfehler wie „kein

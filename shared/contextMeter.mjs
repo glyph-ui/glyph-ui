@@ -59,20 +59,6 @@ export const PROFILE_DEFAULT_WINDOWS = {
 };
 
 /**
- * Lokale Modelle (Ternary Bonsai 2 27B, llama.cpp) haben ein VIEL kleineres
- * Fenster als die Cloud-Modelle. Diese Map sticht den 256k-Default von
- * °_Agent, sonst zeigt der LVL-Balken ~1 % an, während der Kontext fast voll
- * ist. Der laufende Server liefert den echten Wert über /api/local/status
- * (contextWindow) — das hier ist der Fallback.
- */
-export const LOCAL_CONTEXT_WINDOWS = {
-  "bonsai-2-27b-uncensored": 16_384,
-  bonsai: 16_384,
-  "ternary-bonsai-2-27b": 16_384,
-  "bonsai-2-27b": 16_384,
-};
-
-/**
  * Unsichtbarer Prompt-Anteil, den der LVL-Balken sonst nicht sieht.
  *
  * Der Balken zählt nur den sichtbaren Chat-Text. Das Modell bekommt aber bei
@@ -84,8 +70,6 @@ export const LOCAL_CONTEXT_WINDOWS = {
  * Anfrage real schon an der Kontextgrenze scheitert.
  */
 export const PROMPT_OVERHEAD_TOKENS = {
-  /** Lokales Modell (Bonsai 2 27B, 16k). */
-  local: 1250,
   /** Cloud-Kopf: voller Prompt (~17.000 Zeichen) — bei 256k/1M aber kaum sichtbar. */
   cloud: 4300,
 };
@@ -203,16 +187,6 @@ export function resolveContextWindow(model, profile) {
     pid === "^_tick"
       ? "_code"
       : pid;
-  // Lokales Modell zuerst: sein Fenster (16k) muss den 256k-Default von
-  // °_Agent ueberstimmen. Cloud-Verhalten bleibt unveraendert.
-  const localId = normalizeModelId(model);
-  if (localId && LOCAL_CONTEXT_WINDOWS[localId] != null) {
-    return {
-      window: LOCAL_CONTEXT_WINDOWS[localId],
-      source: "map",
-      matchedKey: localId,
-    };
-  }
   // °_Agent = Suche: 256k LVL-Skala. 1M bleibt ^_Code.
   if (profileKey === "glyph-agent") {
     return {

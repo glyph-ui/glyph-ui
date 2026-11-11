@@ -37,11 +37,8 @@ export const DEFAULT_ROUTER_URL = "https://openrouter.ai/api/v1";
  * - direct     : Direct-API (Primary), kein Fallback
  * - openrouter : nur Router (OpenRouter oder Orca, je nach OPENROUTER_URL)
  * - hybrid     : Direct primär → Router-Fallback (Default)
- * - local      : lokaler Server (Ternary Bonsai 2 27B, 127.0.0.1:8080).
- *                Kein Cloud-Anteil. Lebensdauer des Modellprozesses:
- *                server/localModel.mjs (start/stop/status).
  */
-export const PROVIDER_MODES = ["direct", "openrouter", "hybrid", "local"];
+export const PROVIDER_MODES = ["direct", "openrouter", "hybrid"];
 
 export function normalizeProvider(value) {
   const v = String(value || "").trim().toLowerCase();

@@ -8,6 +8,37 @@ import { pageDrawScale } from "../utils/pdfView.js";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
 
+/**
+ * PDF-Dokument sicher freigeben.
+ *
+ * pdf.js 6.x: `PDFDocumentProxy` hat `cleanup()`, nicht `destroy()`.
+ * `destroy()` liegt auf `PDFDocumentLoadingTask`. Ohne diese Prüfung warf
+ * `doc.destroy()` beim Schließen des Quellen-Fensters "is not a function"
+ * und die ganze UI wurde weiß (Fehler 2026-10-30).
+ */
+function safeDestroyDoc(entry) {
+  if (!entry) return;
+  const { task, doc } = entry;
+  try {
+    if (task && typeof task.destroy === "function") {
+      const r = task.destroy();
+      if (r && typeof r.catch === "function") r.catch(() => {});
+      return;
+    }
+    if (doc && typeof doc.destroy === "function") {
+      const r = doc.destroy();
+      if (r && typeof r.catch === "function") r.catch(() => {});
+      return;
+    }
+    if (doc && typeof doc.cleanup === "function") {
+      const r = doc.cleanup();
+      if (r && typeof r.catch === "function") r.catch(() => {});
+    }
+  } catch {
+    /* bereits freigegeben */
+  }
+}
+
 function PdfSheet({ url, zoom, focusPage }) {
   const scrollRef = useRef(null);
   const pagesRef = useRef(null);
@@ -47,15 +78,14 @@ function PdfSheet({ url, zoom, focusPage }) {
     const run = async () => {
       try {
         if (!docRef.current || docRef.current.url !== url) {
-          if (docRef.current?.doc) {
-            await docRef.current.doc.destroy().catch(() => {});
-          }
-          const doc = await getDocument({ url }).promise;
+          safeDestroyDoc(docRef.current);
+          const task = getDocument({ url });
+          const doc = await task.promise;
           if (cancelled) {
-            await doc.destroy().catch(() => {});
+            safeDestroyDoc({ task, doc });
             return;
           }
-          docRef.current = { url, doc };
+          docRef.current = { url, task, doc };
         }
         const doc = docRef.current.doc;
         const box = Math.max(120, scroll.clientWidth - 16);
@@ -147,9 +177,8 @@ function PdfSheet({ url, zoom, focusPage }) {
 
   // Dokument erst freigeben, wenn die Datei wechselt oder das Sheet verschwindet.
   useEffect(() => () => {
-    const current = docRef.current;
+    safeDestroyDoc(docRef.current);
     docRef.current = null;
-    if (current?.doc) current.doc.destroy().catch(() => {});
   }, [url]);
 
   useEffect(() => {

@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Alexander Hubert
  * SPDX-License-Identifier: MIT
  */
-import { memo, useMemo, useSyncExternalStore } from "react";
+import { Children, memo, useMemo, useSyncExternalStore } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
@@ -13,10 +13,12 @@ import {
   shortLinkLabel,
   siteLabel,
   sourceKind,
+  sourceKindLabel,
   subscribeVaults,
   vaultsVersion,
 } from "../utils/sourceLinks.js";
 import { openVaultSource } from "../utils/sourceOpen.js";
+import { splitByQuery } from "../utils/highlight.js";
 
 // Stable identities — do not recreate per render (matters when text changes).
 const REMARK_PLUGINS = [remarkGfm, remarkBreaks];
@@ -41,6 +43,34 @@ function glyphUrlTransform(url) {
   return defaultUrlTransform(u);
 }
 
+/**
+ * Suchtreffer als React-Knoten markieren (kein DOM-Hack).
+ *
+ * Vorher lief paintMarks() im Quellen-Fenster und ersetzte Text-Knoten im
+ * von React gerenderten Baum. Beim Schliessen des Fensters versuchte React
+ * danach, genau diesen Knoten zu entfernen — er existierte nicht mehr →
+ * NotFoundError → die ganze UI wurde weiss. React-verwaltete Markierung
+ * kann das nicht mehr ausloesen.
+ */
+function highlightNodes(children, query) {
+  if (!String(query || "").trim()) return children;
+  const walk = (node, keyPrefix) => {
+    if (typeof node !== "string") return node;
+    const parts = splitByQuery(node, query);
+    if (parts.length === 1 && !parts[0].hit) return node;
+    return parts.map((p, i) =>
+      p.hit ? (
+        <mark className="source-mark" key={`${keyPrefix}-m${i}`}>
+          {p.text}
+        </mark>
+      ) : (
+        p.text
+      ),
+    );
+  };
+  return Children.map(children, (child, i) => walk(child, `h${i}`));
+}
+
 function MdLink({ href, children, ...props }) {
   const origin = typeof globalThis !== "undefined" ? globalThis.location?.origin || "" : "";
   let hit = classifyLink(href, origin);
@@ -48,6 +78,17 @@ function MdLink({ href, children, ...props }) {
     const t = flattenText(children).trim();
     if (looksLikeVaultFile(t)) hit = { kind: "vault", path: t };
     else if (/^https?:\/\//i.test(t)) hit = classifyLink(t, origin);
+    // Eigener Vault-Proxy (/api/vault/file?path=…): Datei in Glyph öffnen,
+    // nicht den Pfad anzeigen. Der Pfad steckt in der URL.
+    if (hit.kind === "internal" && /^\/api\/vault\/file\?/i.test(String(href))) {
+      try {
+        const u = new URL(String(href), origin || "http://x");
+        const p = u.searchParams.get("path");
+        if (p) hit = { kind: "vault", path: p };
+      } catch {
+        /* kein gueltiger Pfad */
+      }
+    }
   }
 
   const raw = flattenText(children).trim();
@@ -59,13 +100,13 @@ function MdLink({ href, children, ...props }) {
       raw === hit.path || raw.endsWith(hit.path) || looksLikeVaultFile(raw)
         ? vaultTitle(hit.path)
         : children;
-    const title = `${hit.path} — in Glyph öffnen`;
+    const title = `${vaultTitle(hit.path)} — in Glyph öffnen`;
     const onOpen = () => openVaultSource({ path: hit.path, title: vaultTitle(hit.path) });
     const kind = sourceKind({ path: hit.path });
     return (
       <button type="button" className="source-chip source-chip--inline" title={title} onClick={onOpen}>
         <span className={`source-chip-kind source-chip-kind--${kind}`} aria-hidden="true">
-          {kind === "pdf" ? "PDF" : "MD"}
+          {sourceKindLabel(kind)}
         </span>
         <span className="source-chip-name">{label}</span>
       </button>
@@ -161,6 +202,26 @@ const MD_COMPONENTS = {
   a: MdLink,
 };
 
+/** Komponenten mit Such-Highlight (nur im Quellen-Fenster genutzt). */
+function highlightComponents(query) {
+  if (!String(query || "").trim()) return MD_COMPONENTS;
+  const hl = (Tag, className) =>
+    function Highlighted({ children }) {
+      return (
+        <Tag className={className}>{highlightNodes(children, query)}</Tag>
+      );
+    };
+  return {
+    ...MD_COMPONENTS,
+    p: hl("p", "md-p"),
+    li: hl("li", "md-li"),
+    h1: hl("h3", "md-h"),
+    h2: hl("h3", "md-h"),
+    h3: hl("h4", "md-h md-h--sm"),
+    h4: hl("h4", "md-h md-h--sm"),
+  };
+}
+
 /**
  * Chat markdown: GFM + single newlines as hard breaks (Enter in the composer).
  * Without remark-breaks, Markdown collapses "line1\\nline2" into one line.
@@ -168,7 +229,7 @@ const MD_COMPONENTS = {
  * memo: streaming re-renders App for every chunk; only the message whose
  * `text` changed should re-parse. Older bubbles keep their last tree.
  */
-const MarkdownBody = memo(function MarkdownBody({ text }) {
+const MarkdownBody = memo(function MarkdownBody({ text, highlight = "" }) {
   // Neu rendern, sobald die Vault-Namen geladen sind (sonst blieben Pfade mit
   // Leerzeichen in bereits gerenderten Nachrichten unverlinkt).
   const vaultsV = useSyncExternalStore(subscribeVaults, vaultsVersion);
@@ -176,6 +237,10 @@ const MarkdownBody = memo(function MarkdownBody({ text }) {
     () => linkifyAnswer(text ?? ""),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [text, vaultsV],
+  );
+  const components = useMemo(
+    () => highlightComponents(highlight),
+    [highlight],
   );
   if (!source.trim()) {
     return <div className="md-body md-body--empty" />;
@@ -185,7 +250,7 @@ const MarkdownBody = memo(function MarkdownBody({ text }) {
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}
         urlTransform={glyphUrlTransform}
-        components={MD_COMPONENTS}
+        components={components}
       >
         {source}
       </ReactMarkdown>

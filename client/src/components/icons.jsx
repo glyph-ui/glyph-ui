@@ -595,7 +595,82 @@ function IconChevronRight({ size = 18 }) {
   );
 }
 
+/**
+ * Schreibfeder im Tintenfass — Glyph-Logo und Lade-Symbol.
+ * `animated` = Feder schwenkt während der Arbeit (wie bei Claude Code).
+ */
+function QuillIcon({ size = 20, animated = false }) {
+  return (
+    <svg
+      className={`quill-icon${animated ? " quill-icon--animated" : ""}`}
+      width={size}
+      height={size}
+      viewBox="0 0 512 512"
+      fill="none"
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id="qg" x1="0.15" y1="0.85" x2="0.85" y2="0.15">
+          <stop offset="0%" stopColor="#7a5a10" />
+          <stop offset="25%" stopColor="#a07818" />
+          <stop offset="55%" stopColor="#c89a2e" />
+          <stop offset="80%" stopColor="#e0b84a" />
+          <stop offset="100%" stopColor="#f0d078" />
+        </linearGradient>
+        <linearGradient id="qs" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0%" stopColor="#6b4e0e" />
+          <stop offset="100%" stopColor="#a07818" />
+        </linearGradient>
+      </defs>
+      <g className="quill-feather">
+        {/* Federkörper: linke Seite (glatt) */}
+        <path
+          d="M38 474 C38 474 58 420 88 362 C118 304 162 238 210 184
+             C252 136 298 92 332 58 C348 42 360 28 358 22
+             C354 14 338 22 322 36 C282 72 232 122 190 170
+             C142 226 100 296 72 356 C52 400 38 474 38 474 Z"
+          fill="url(#qg)"
+        />
+        {/* Federkörper: rechte Seite (mit Barben) */}
+        <path
+          d="M358 22 C358 22 372 32 368 48 C364 64 348 86 332 106
+             C316 126 300 148 290 164 L272 148 C282 130 296 108 310 88
+             C324 68 340 46 352 32 L358 22 Z"
+          fill="url(#qg)"
+        />
+        {/* Barben (Federsegmente rechts) */}
+        <path d="M272 148 L308 108" stroke="#8B6914" strokeWidth="5" strokeLinecap="round" opacity="0.5" />
+        <path d="M248 180 L286 138" stroke="#8B6914" strokeWidth="5" strokeLinecap="round" opacity="0.5" />
+        <path d="M224 212 L262 170" stroke="#8B6914" strokeWidth="5" strokeLinecap="round" opacity="0.5" />
+        <path d="M200 244 L238 202" stroke="#8B6914" strokeWidth="5" strokeLinecap="round" opacity="0.5" />
+        <path d="M176 276 L214 234" stroke="#8B6914" strokeWidth="5" strokeLinecap="round" opacity="0.5" />
+        {/* Schaft (Kielfeder) */}
+        <path
+          d="M38 474 L358 22"
+          stroke="url(#qs)"
+          strokeWidth="10"
+          strokeLinecap="round"
+        />
+        {/* Schreibfeder-Spitze (Nib) */}
+        <path
+          d="M38 474 L62 450 L52 460 Z"
+          fill="url(#qs)"
+        />
+        {/* Helle Kante auf dem Schaft */}
+        <path
+          d="M38 474 L358 22"
+          stroke="#f0d078"
+          strokeWidth="2"
+          strokeLinecap="round"
+          opacity="0.4"
+        />
+      </g>
+    </svg>
+  );
+}
+
 export {
+  QuillIcon,
   IconSearch,
   IconCompose,
   IconCommands,

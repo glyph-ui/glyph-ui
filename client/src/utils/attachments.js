@@ -194,16 +194,25 @@ export async function uploadAttachmentFiles(files, opts = {}) {
     throw new Error("Upload: leere Antwort");
   }
 
-  // Local image previews (server paths are not browser-readable)
+  // Local image previews (server paths are not browser-readable).
+  // Data-URL statt Blob-URL: Die Vorschau bleibt gültig, nachdem der Composer
+  // den Anhang geleert und Blob-URLs widerrufen hat — so kann die gesendete
+  // Nachricht weiterhin ein Mini-Bild zeigen.
   return {
     attachments: attachments.map((a, i) => {
       const f = slice[i];
+      const mime = a.mimeType || payloadFiles[i]?.mimeType || "application/octet-stream";
       let previewUrl;
-      if (f && isImageMime(f.type || a.mimeType)) {
-        try {
-          previewUrl = URL.createObjectURL(f);
-        } catch {
-          previewUrl = undefined;
+      if (isImageMime(f?.type || mime)) {
+        const b64 = payloadFiles[i]?.dataBase64;
+        if (b64) {
+          previewUrl = `data:${mime};base64,${b64}`;
+        } else if (f) {
+          try {
+            previewUrl = URL.createObjectURL(f);
+          } catch {
+            previewUrl = undefined;
+          }
         }
       }
       return {
@@ -228,7 +237,8 @@ export async function uploadAttachmentFiles(files, opts = {}) {
 export function revokeAttachmentPreviews(list) {
   if (!list?.length) return;
   for (const a of list) {
-    if (a?.previewUrl) {
+    // Data-URLs (image previews kept for the sent message) are not revocable.
+    if (a?.previewUrl && a.previewUrl.startsWith("blob:")) {
       try {
         URL.revokeObjectURL(a.previewUrl);
       } catch {

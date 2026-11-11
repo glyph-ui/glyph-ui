@@ -13,10 +13,16 @@ const MAX_CHIPS = 6;
 /** "pdf" | "md" | "web" — aus `kind`, sonst aus URL/Endung. */
 export function sourceKind(file) {
   const k = String(file?.kind || "").toLowerCase();
-  if (k === "pdf" || k === "md" || k === "web") return k;
+  if (["pdf", "md", "web", "docx", "xlsx", "pptx", "text"].includes(k)) return k;
   const loc = String(file?.url || file?.path || "");
   if (/^https?:\/\//i.test(loc)) return "web";
-  return loc.toLowerCase().endsWith(".pdf") ? "pdf" : "md";
+  const low = loc.split("?")[0].toLowerCase();
+  if (low.endsWith(".pdf")) return "pdf";
+  if (low.endsWith(".docx") || low.endsWith(".doc")) return "docx";
+  if (low.endsWith(".xlsx") || low.endsWith(".xls")) return "xlsx";
+  if (low.endsWith(".pptx") || low.endsWith(".ppt")) return "pptx";
+  if (low.endsWith(".txt") || low.endsWith(".csv") || low.endsWith(".rtf")) return "text";
+  return "md";
 }
 
 /**
@@ -189,11 +195,55 @@ export function pathFromOpenHref(href) {
 }
 
 const VAULT_FILE_RE = /\.(pdf|md)(?:$|[?#])/i;
+// Office-/Textdateien: nur mit Slash davor (sonst wäre jedes ".txt" im
+// Fließtext eine Quelldatei).
+const VAULT_DOC_RE = /\/.*\.(docx?|xlsx?|pptx?|pptm|txt|csv|rtf|odt|ods)(?:$|[?#])/i;
 
-/** PDF/Markdown-Pfad — auch mit Query/Hash. */
+/** PDF/Markdown-/Office-Pfad — auch mit Query/Hash. */
 export function looksLikeVaultFile(path) {
   const p = String(path || "").split("?")[0].split("#")[0];
-  return VAULT_FILE_RE.test(p);
+  return VAULT_FILE_RE.test(p) || VAULT_DOC_RE.test(p);
+}
+
+/**
+ * Kürzel für die Quellen-Chips (PDF, DOCX, XLSX, PPTX, TXT, MD).
+ * @param {string} kind
+ */
+export function sourceKindLabel(kind) {
+  const k = String(kind || "").toLowerCase();
+  if (k === "pdf") return "PDF";
+  if (k === "docx") return "DOCX";
+  if (k === "xlsx") return "XLSX";
+  if (k === "pptx") return "PPTX";
+  if (k === "text") return "TXT";
+  if (k === "web") return "WEB";
+  return "MD";
+}
+
+/**
+ * Vault-Pfade aus einem Antworttext ziehen (z. B. die "Quellen:"-Liste, die
+ * das Modell als Text schreibt). Nur Pfade, deren erster Ordnersegment ein
+ * bekannter Vault ist — sonst wären Unix-Pfade (/etc/hosts) Treffer.
+ *
+ * @param {string} text
+ * @param {number} [limit]
+ * @returns {string[]}
+ */
+export function extractVaultPaths(text, limit = 8) {
+  const raw = String(text || "");
+  if (!raw) return [];
+  const vaults = knownVaults();
+  const out = [];
+  for (const m of raw.match(/\/[^\s"'<>|]+/g) || []) {
+    const p = m.replace(/[.,;:!?)]+$/, "");
+    if (!looksLikeVaultFile(p)) continue;
+    const first = p.replace(/^\/+/, "").split("/")[0];
+    if (!first) continue;
+    if (vaults.length && !vaults.includes(first)) continue;
+    if (!out.includes(p)) out.push(p);
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 function _decodePath(p) {
@@ -429,8 +479,10 @@ function _linkifyVault(part) {
     .sort((a, b) => b.length - a.length)
     .map(_escRe)
     .join("|");
+  // Office-/Textdateien mitlinken — die Betriebsanweisung liegt als .docx da,
+  // sonst blieb "Pfad: /Vault/… .docx" ein nicht klickbarer Code-Span.
   const re = new RegExp(
-    `(?:^|[\\s(„"“»>*])((?:\\/)?(?:${alt})\\/[^\\n)"'\`|<>*]+?\\.(?:pdf|md|PDF|MD))`,
+    `(?:^|[\\s(„"“»>*])((?:\\/)?(?:${alt})\\/[^\\n)"'\`|<>*]+?\\.(?:pdf|md|docx?|xlsx?|pptx?|pptm?|txt|csv|rtf|odt|ods))`,
     "gi",
   );
   return part.replace(re, (match, path) => {
@@ -466,7 +518,7 @@ export function linkifyAnswer(text) {
  */
 export function linkifyVaultPaths(text) {
   const src = String(text ?? "");
-  if (!src || (!src.includes(".pdf") && !src.includes(".md") && !src.includes(".PDF") && !src.includes(".MD"))) {
+  if (!src || !/\.(pdf|md|docx?|xlsx?|pptx?|txt|csv|rtf)/i.test(src)) {
     return src;
   }
   const parts = src.split(/(```[\s\S]*?```)/);

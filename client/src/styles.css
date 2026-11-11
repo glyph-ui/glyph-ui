@@ -586,91 +586,6 @@ body,
    Gold = gewählt. Gefüllt = gewählt und bereit; nur Kontur = gewählt, aber
    startet/schläft; rote Kontur = Fehler. Nicht gewählt bleibt neutral.
    --------------------------------------------------------------------------- */
-.provider-toggle {
-  display: inline-flex;
-  align-items: stretch;
-  border: 1px solid var(--border, #333);
-  border-radius: 999px;
-  padding: 1px;
-  background: transparent;
-  overflow: hidden;
-}
-
-.provider-toggle-seg {
-  appearance: none;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted, #999);
-  font-family: inherit;
-  font-size: 0.72rem;
-  line-height: 1.2;
-  padding: 0.2rem 0.55rem;
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background-color 120ms ease,
-    color 120ms ease,
-    border-color 120ms ease;
-}
-
-.provider-toggle-seg:hover:not(:disabled) {
-  color: var(--fg, #eee);
-}
-
-/* Gewählt und bereit: gefüllt gold, dunkle Schrift für Kontrast. */
-.provider-toggle-seg.is-on {
-  background: var(--accent, #c9a227);
-  border-color: var(--accent, #c9a227);
-  color: #14110a;
-  font-weight: 600;
-}
-
-/* Gewählt, aber noch nicht bereit (startet oder schläft): goldene Kontur,
-   damit die WAHL sichtbar bleibt, ohne „bereit" zu behaupten. */
-.provider-toggle-seg.is-armed {
-  border-color: color-mix(in srgb, var(--accent, #c9a227) 55%, transparent);
-  color: var(--accent, #c9a227);
-}
-
-/* Gewählt, Modell meldet Fehler. */
-.provider-toggle-seg.is-err {
-  border-color: var(--bad, #e05555);
-  color: var(--bad, #e05555);
-}
-
-.provider-toggle-seg:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-/* Gast-Sperre (2026-10-24): 27B nur für den Hauptnutzer — sichtbar, ausgegraut,
-   Klick zeigt 2 s lang einen Hinweis statt zu schalten. */
-.provider-toggle-seg.is-locked {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.provider-toggle-wrap {
-  position: relative;
-  display: inline-flex;
-}
-
-.provider-toggle-hint {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 80;
-  white-space: nowrap;
-  padding: 0.25rem 0.6rem;
-  border-radius: 8px;
-  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--border));
-  background: var(--panel);
-  color: var(--text);
-  font-size: 0.68rem;
-  pointer-events: none;
-}
-
 .provider-switch-btn:hover:not(:disabled) {
   border-color: var(--fg-dim, #666);
 }
@@ -2130,7 +2045,23 @@ button.send.send--stuffed .send-snack {
 
 .msg-attach-icon {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
   font-size: 0.85em;
+  color: var(--muted);
+}
+
+.msg-attach-thumb {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--bg);
+}
+
+.msg-attach-chip:has(.msg-attach-thumb) {
+  padding-left: 3px;
 }
 
 /* Pending attachments above the composer textarea */
@@ -2713,6 +2644,27 @@ button.tool-card-summary:hover .tool-card-verb {
 }
 
 /* Aktivitäts-Punkte: pulsierend während der Arbeit, ruhig danach */
+/* Schreibfeder — Logo und Lade-Symbol */
+.quill-icon {
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.quill-icon--animated .quill-feather {
+  transform-box: fill-box;
+  transform-origin: 15% 92%;
+  animation: quill-sway 2.2s ease-in-out infinite;
+}
+
+@keyframes quill-sway {
+  0%, 100% {
+    transform: rotate(-8deg);
+  }
+  50% {
+    transform: rotate(8deg);
+  }
+}
+
 .activity-mark {
   display: inline-flex;
   align-items: center;
@@ -11154,6 +11106,7 @@ button.pill-btn {
   color: var(--gold);
 }
 
+
 /* Obsidian bleibt Wortmarke, aber in der selben Zeile und Höhe. */
 .source-icon-btn--text {
   width: auto;
@@ -11552,4 +11505,336 @@ mark.source-mark--on {
 
 .source-overlay-error {
   color: color-mix(in srgb, var(--fg) 80%, transparent);
+}
+
+/* Anbieter-/HTTP-Fehler im Chat: ruhige Karte statt roher JSON-Wand. */
+.provider-error {
+  max-width: 68ch;
+  margin: 2px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border));
+  border-left: 3px solid var(--danger);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 6%, var(--bg));
+}
+
+.provider-error-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.provider-error-icon {
+  flex: 0 0 auto;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-top: 1px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--bg);
+  background: color-mix(in srgb, var(--danger) 85%, var(--text));
+}
+
+.provider-error-copy {
+  min-width: 0;
+}
+
+.provider-error-copy strong {
+  display: block;
+  color: var(--text);
+  font-size: 0.94rem;
+  line-height: 1.35;
+}
+
+.provider-error-copy p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 0.87rem;
+  line-height: 1.45;
+}
+
+.provider-error-model {
+  font-size: 0.76rem !important;
+  opacity: 0.85;
+  word-break: break-all;
+}
+
+.provider-error-hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.81rem;
+  line-height: 1.4;
+}
+
+.provider-error-link {
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--gold);
+  font-size: 0.83rem;
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+}
+
+.provider-error-link:hover {
+  border-bottom-color: var(--gold);
+}
+
+.provider-error-details {
+  margin-top: 9px;
+}
+
+.provider-error-details > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.77rem;
+}
+
+.provider-error-details pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--border) 14%, transparent);
+  border-radius: 6px;
+}
+
+/* Bild in der Nutzer-Bubble: Miniatur anklickbar, Text optional. */
+.msg-attach-chip:has(.msg-image-thumb) {
+  padding: 3px;
+  max-width: min(100%, 320px);
+}
+
+.msg-image-thumb {
+  display: block;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: zoom-in;
+  background: var(--bg);
+  line-height: 0;
+}
+
+.msg-image-img {
+  display: block;
+  width: 100%;
+  max-width: 300px;
+  max-height: 220px;
+  object-fit: cover;
+  object-position: top left;
+}
+
+/* Lightbox: Bild vergrößert anzeigen (Esc/Klick außen schließt). */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, #000 72%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.lightbox-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(94vw, 1400px);
+  max-height: 92vh;
+}
+
+.lightbox-img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(92vh - 44px);
+  object-fit: contain;
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.lightbox-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.lightbox-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lightbox-close {
+  flex: 0 0 auto;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lightbox-close:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+/* Gefundene Dateien unter der Antwort (klickbar + Ordner-Suche). */
+.answer-files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.answer-files-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.answer-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.answer-file-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.answer-file-more:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+/* Trefferzeile: Aktionen rechts (Öffnen / Im Ordner suchen). */
+.vault-hit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vault-hit-row .vault-hit {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.vault-hit-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.vault-hit-action {
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.vault-hit-action:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.vault-hits-scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vault-hits-scope-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 30ch;
+}
+
+.vault-hits-scope-back {
+  padding: 2px 8px;
+  font-size: 0.72rem;
+}
+
+/* Fehlergrenze: verständliche Meldung statt weisser Seite. */
+.fatal-error {
+  max-width: 620px;
+  margin: 12vh auto;
+  padding: 22px 24px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.fatal-error-title {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+
+.fatal-error-text {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.fatal-error-detail {
+  margin: 0 0 14px;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--border) 14%, transparent);
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.fatal-error-reload {
+  padding: 7px 14px;
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--gold);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.fatal-error-reload:hover {
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
 }

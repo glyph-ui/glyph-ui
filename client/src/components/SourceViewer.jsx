@@ -132,6 +132,8 @@ function SourceViewer({ file, open, onClose, side = "right", mode = "overlay" })
   const kind = sourceKind(file);
   const isWeb = kind === "web";
   const isPdf = kind === "pdf";
+  // Office-/Textdateien: der Agent extrahiert den Text (docx/xlsx/pptx/txt).
+  const isDoc = kind === "docx" || kind === "xlsx" || kind === "pptx" || kind === "text";
   const path = String(file?.path || "");
   const url = String(file?.url || (isWeb ? path : ""));
   const fileUrl = path && !isWeb ? sourceFileUrl(path) : "";
@@ -181,9 +183,15 @@ function SourceViewer({ file, open, onClose, side = "right", mode = "overlay" })
   useEffect(() => {
     if (!open || !path || isPdf || isWeb) return undefined;
     let alive = true;
-    fetch(fileUrl)
+    const url = isDoc ? `${fileUrl}&format=text` : fileUrl;
+    fetch(url)
       .then(async (r) => {
-        if (r.ok) return r.text();
+        if (r.ok) {
+          if (!isDoc) return r.text();
+          const j = await r.json().catch(() => ({}));
+          if (j?.ok === false) throw new Error(j.error || "Text nicht extrahierbar");
+          return String(j?.text || "");
+        }
         const j = await r.json().catch(() => ({}));
         throw new Error(j.error || `Datei nicht ladbar (HTTP ${r.status})`);
       })
@@ -196,7 +204,7 @@ function SourceViewer({ file, open, onClose, side = "right", mode = "overlay" })
     return () => {
       alive = false;
     };
-  }, [open, path, isPdf, isWeb, fileUrl]);
+  }, [open, path, isPdf, isWeb, isDoc, fileUrl]);
 
   useEffect(() => {
     if (!open || !isPdf || !fileUrl) return undefined;
@@ -239,56 +247,6 @@ function SourceViewer({ file, open, onClose, side = "right", mode = "overlay" })
     const el = marks[Math.min(hitIndex, marks.length - 1)];
     el?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [isPdf, isWeb, query, hitIndex, mdHits.length, text]);
-
-  const paintMarks = useCallback(() => {
-    const root = textRef.current;
-    if (!root) return;
-    const marks = root.querySelectorAll("mark.source-mark");
-    for (const m of marks) {
-      const parent = m.parentNode;
-      if (!parent) continue;
-      parent.replaceChild(document.createTextNode(m.textContent || ""), m);
-      parent.normalize();
-    }
-    const q = query.trim();
-    if (!q) return;
-    const needle = q.toLowerCase();
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    const nodes = [];
-    let node = walker.nextNode();
-    while (node) {
-      nodes.push(node);
-      node = walker.nextNode();
-    }
-    let nth = 0;
-    for (const textNode of nodes) {
-      const value = textNode.nodeValue || "";
-      const lower = value.toLowerCase();
-      if (!lower.includes(needle)) continue;
-      const frag = document.createDocumentFragment();
-      let from = 0;
-      let i = lower.indexOf(needle, from);
-      while (i >= 0) {
-        if (i > from) frag.appendChild(document.createTextNode(value.slice(from, i)));
-        const mark = document.createElement("mark");
-        mark.className =
-          nth === hitIndex ? "source-mark source-mark--on" : "source-mark";
-        mark.textContent = value.slice(i, i + q.length);
-        frag.appendChild(mark);
-        nth += 1;
-        from = i + q.length;
-        i = lower.indexOf(needle, from);
-      }
-      if (from < value.length) frag.appendChild(document.createTextNode(value.slice(from)));
-      textNode.parentNode?.replaceChild(frag, textNode);
-    }
-  }, [query, hitIndex]);
-
-  useEffect(() => {
-    if (isPdf || isWeb) return undefined;
-    paintMarks();
-    return undefined;
-  }, [isPdf, isWeb, text, query, hitIndex, paintMarks]);
 
   const vault = sourceVault(file);
   const ext = !isWeb ? obsidianUrl(file) : "";
@@ -557,7 +515,7 @@ function SourceViewer({ file, open, onClose, side = "right", mode = "overlay" })
         <p className="source-error">{error}</p>
       ) : (
         <div className="source-text" ref={textRef}>
-          <MarkdownBody text={text || "lädt …"} />
+          <MarkdownBody text={text || "lädt …"} highlight={query} />
           {mdSnippets.length > 1 ? (
             <ol className="source-hit-list">
               {mdSnippets.map((s) => (

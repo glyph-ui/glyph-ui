@@ -19,6 +19,7 @@ import { RewindPicker } from "./components/RewindPicker.jsx";
 import { SlashHighlightedText } from "./components/SlashHighlightedText.jsx";
 import { VaultSearchHits } from "./components/VaultSearchHits.jsx";
 import { TaskHandoffDialog } from "./components/TaskHandoffDialog.jsx";
+import { ImageLightbox } from "./components/ImageLightbox.jsx";
 import {
   findSlashHighlightRanges,
   insertSlashCommand,
@@ -65,13 +66,13 @@ import {
   IconLink,
   IconLinkOff,
   IconRewind,
+  IconDocument,
 } from "./components/icons.jsx";
 import { useWorkingSeconds } from "./hooks/useWorkingSeconds.js";
 import {
   MAX_ATTACHMENTS_PER_MSG,
   dataTransferHasFiles,
   filesFromDataTransfer,
-  formatAttachmentSummary,
   formatBytes,
   isImageMime,
   revokeAttachmentPreviews,
@@ -393,6 +394,8 @@ export default function App() {
   const [error, setError] = useState("");
   /** Ready attachments for the next send (after POST /api/attachments). */
   const [pendingAttachments, setPendingAttachments] = useState([]);
+  /** Vergrößertes Bild aus der Chat-Bubble (Lightbox). */
+  const [zoomedImage, setZoomedImage] = useState(null);
   const [attachBusy, setAttachBusy] = useState(false);
   /** Visual drop target on the message list (drag counter avoids flicker). */
   const [dropActive, setDropActive] = useState(false);
@@ -2077,6 +2080,22 @@ export default function App() {
 
       const wire =
         action === "fork" ? [] : toWireAttachments(attachments || []);
+      // Vorschau nur fürs UI an die Nachricht hängen — nicht über den Socket
+      // schicken (Data-URLs können mehrere MB groß sein).
+      const previewByKey = new Map(
+        (attachments || [])
+          .filter((a) => a?.previewUrl)
+          .map((a) => [String(a.id || a.path || a.name), a.previewUrl]),
+      );
+      const shown =
+        action === "fork"
+          ? []
+          : wire.map((w) => {
+              const previewUrl = previewByKey.get(
+                String(w.id || w.path || w.name),
+              );
+              return previewUrl ? { ...w, previewUrl } : w;
+            });
 
       const userId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       setMessages((prev) => [
@@ -2087,7 +2106,7 @@ export default function App() {
           text: displayText,
           streaming: false,
           at: Date.now(),
-          ...(wire.length ? { attachments: wire } : {}),
+          ...(shown.length ? { attachments: shown } : {}),
         },
       ]);
       assistantBuf.current = "";
@@ -2155,21 +2174,17 @@ export default function App() {
   const dispatchQueuedRef = useRef(dispatchPayload);
   dispatchQueuedRef.current = dispatchPayload;
 
-  const buildDisplayText = useCallback((action, text, attachments = []) => {
-    const att = formatAttachmentSummary(attachments);
+  const buildDisplayText = useCallback((action, text, _attachments = []) => {
+    // Anhänge stehen als Chips/Vorschaubilder in der Bubble — die alte
+    // „📎 name“-Zeile im Text war doppelt und wirkte unruhig.
     if (action === "deep-search") {
-      const body = text || att || "…";
-      return att && text ? `🔍 Deep Search: ${text}\n${att}` : `🔍 Deep Search: ${body}`;
+      return text ? `🔍 Deep Search: ${text}` : "🔍 Deep Search";
     }
-    if (action === "swarm") {
-      const body = text || att || "…";
-      return att && text ? `Swarm: ${text}\n${att}` : `Swarm: ${body}`;
-    }
+    if (action === "swarm") return text ? `Swarm: ${text}` : "Swarm";
     if (action === "fork") {
       return text ? `⑂ Fork: ${text}` : "⑂ Fork (Session branchen)";
     }
-    if (text && att) return `${text}\n${att}`;
-    return text || att || "";
+    return text || "";
   }, []);
 
   const refreshActiveTask = useCallback(async () => {
@@ -2389,8 +2404,12 @@ export default function App() {
     const body = resolved.text;
 
     // Fork may run without a directive; chat & deep-search need text and/or files.
+    // Anhang-Metadaten inkl. Vorschaubild (nur UI). Der Wire-Form entsteht
+    // später in dispatchPayload — dort wird previewUrl abgeschnitten.
     const atts =
-      action === "fork" ? [] : toWireAttachments(pendingAttachments);
+      action === "fork"
+        ? []
+        : pendingAttachments.filter((a) => a && a.path);
     if (action !== "fork" && !body && !atts.length) return;
 
     if (action === "deep-search" && agent?.id && agent.id !== "grok") {
@@ -2444,7 +2463,18 @@ export default function App() {
 
     // While Grok is working: park in queue (TUI-style wait area)
     if (busy || messages.some((m) => m.streaming)) {
-      queueRef.current = [...queueRef.current, payload];
+      // Vorschaubilder (Data-URLs) gehören nicht in den localStorage.
+      const parked = {
+        ...payload,
+        ...(payload.attachments?.length
+          ? {
+              attachments: payload.attachments.map(
+                ({ previewUrl: _previewUrl, ...rest }) => rest,
+              ),
+            }
+          : {}),
+      };
+      queueRef.current = [...queueRef.current, parked];
       setQueue([...queueRef.current]);
       setInput("");
       clearPendingAttachments();
@@ -4530,15 +4560,48 @@ export default function App() {
                                     className="msg-attach-chip"
                                     title={a.name}
                                   >
-                                    <span
-                                      className="msg-attach-icon"
-                                      aria-hidden="true"
-                                    >
-                                      {isImageMime(a.mimeType) ? "🖼" : "📄"}
-                                    </span>
-                                    <span className="msg-attach-name">
-                                      {a.name}
-                                    </span>
+                                    {a.previewUrl && isImageMime(a.mimeType) ? (
+                                      // Bild selbst in der Bubble — Klick
+                                      // vergrößert (Lightbox).
+                                      <button
+                                        type="button"
+                                        className="msg-image-thumb"
+                                        onClick={() =>
+                                          setZoomedImage({
+                                            src: a.previewUrl,
+                                            name: a.name,
+                                          })
+                                        }
+                                        title="Bild vergrößern"
+                                        aria-label={`${a.name} vergrößern`}
+                                      >
+                                        <img
+                                          className="msg-image-img"
+                                          src={a.previewUrl}
+                                          alt={a.name}
+                                        />
+                                      </button>
+                                    ) : (
+                                      <>
+                                        {a.previewUrl ? (
+                                          <img
+                                            className="msg-attach-thumb"
+                                            src={a.previewUrl}
+                                            alt=""
+                                          />
+                                        ) : (
+                                          <span
+                                            className="msg-attach-icon"
+                                            aria-hidden="true"
+                                          >
+                                            <IconDocument size={15} />
+                                          </span>
+                                        )}
+                                        <span className="msg-attach-name">
+                                          {a.name}
+                                        </span>
+                                      </>
+                                    )}
                                   </li>
                                 ))}
                               </ul>
@@ -4670,6 +4733,13 @@ export default function App() {
                 setPlanCollapsed(false);
                 composerRef.current?.focus();
               }}
+            />
+          ) : null}
+          {zoomedImage ? (
+            <ImageLightbox
+              src={zoomedImage.src}
+              name={zoomedImage.name}
+              onClose={() => setZoomedImage(null)}
             />
           ) : null}
           {taskHandoff ? (
@@ -4811,7 +4881,7 @@ export default function App() {
                       />
                     ) : (
                       <span className="attach-chip-icon" aria-hidden="true">
-                        {isImageMime(a.mimeType) ? "🖼" : "📄"}
+                        <IconDocument size={15} />
                       </span>
                     )}
                     <span className="attach-chip-name">{a.name}</span>

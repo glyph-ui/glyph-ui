@@ -4104,7 +4104,6 @@ export default function App() {
                         type="button"
                         className="pill pill-btn pill-btn--icon"
                         onClick={() => {
-                          if (!window.confirm("Auf diesem Gerät abmelden?")) return;
                           void webLogout().finally(() => window.location.reload());
                         }}
                         title="Abmelden"

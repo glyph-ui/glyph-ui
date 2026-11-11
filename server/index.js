@@ -96,6 +96,7 @@ import {
   hseqAuthState,
   hseqCorsHeaders,
   hseqJobAllowed,
+  hseqLogLine,
   hseqThrottled,
 } from "./hseqButton.mjs";
 import {
@@ -791,6 +792,19 @@ app.post("/api/hseq/run", async (req, res) => {
   for (const [k, v] of Object.entries(hseqCorsHeaders(req.get("origin")))) {
     res.setHeader(k, v);
   }
+  // Über den Tunnel kommt jede Anfrage von 127.0.0.1 — ohne die echte IP
+  // teilten sich alle Besucher einen Fehlversuchs-Zähler.
+  const client = webClientKey(req);
+  res.on("finish", () => {
+    console.log(
+      hseqLogLine({
+        origin: req.get("origin"),
+        client,
+        job: req.body?.job ?? HSEQ_BUTTON_DEFAULT_JOB,
+        status: res.statusCode,
+      }),
+    );
+  });
 
   const job =
     String(req.body?.job ?? HSEQ_BUTTON_DEFAULT_JOB).trim() ||
@@ -804,7 +818,6 @@ app.post("/api/hseq/run", async (req, res) => {
     return;
   }
 
-  const client = req.socket?.remoteAddress || "?";
   const auth = hseqAuthState(hseqAuthFailures.get(client));
   if (auth.blocked) {
     res.status(429).json({

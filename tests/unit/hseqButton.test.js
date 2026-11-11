@@ -14,6 +14,7 @@ import {
   hseqCorsHeaders,
   hseqCorsOrigin,
   hseqJobAllowed,
+  hseqLogLine,
   hseqThrottled,
 } from "../../server/hseqButton.mjs";
 
@@ -113,5 +114,41 @@ describe("hseqButton: Fehlversuche", () => {
     assert.deepEqual(hseqAuthState(["x", NaN], 1000).recent, []);
     assert.equal(hseqAuthState(undefined, 1000).blocked, false);
     assert.equal(HSEQ_AUTH_WINDOW_MS, 600000);
+  });
+});
+
+describe("hseqButton: Logzeile (Beobachtung Origin: null)", () => {
+  it("nennt Status, Job, Origin-Art und Absender", () => {
+    const line = hseqLogLine({
+      origin: "null",
+      client: "203.0.113.9",
+      job: HSEQ_BUTTON_DEFAULT_JOB,
+      status: 401,
+    });
+    assert.match(line, /^\[hseq\] run status=401 /);
+    assert.match(line, /origin=null \(erlaubt\)/);
+    assert.match(line, /client=203\.0\.113\.9$/);
+    assert.ok(line.includes(`job=${HSEQ_BUTTON_DEFAULT_JOB}`));
+  });
+
+  it("markiert fremde und fehlende Origins", () => {
+    assert.match(
+      hseqLogLine({ origin: "https://evil.example", client: "x", job: "j", status: 200 }),
+      /origin=https:\/\/evil\.example \(fremd\)/,
+    );
+    assert.match(hseqLogLine({ origin: undefined, status: 400 }), /origin=\(kein\) \(fremd\)/);
+    assert.match(hseqLogLine({ origin: "app://obsidian.md", status: 200 }), /\(erlaubt\)/);
+  });
+
+  it("enthält nie ein Passwort und kappt lange Werte", () => {
+    const line = hseqLogLine({
+      origin: "x".repeat(500),
+      client: "y".repeat(500),
+      job: "z".repeat(500),
+      status: 200,
+      password: "geheim",
+    });
+    assert.ok(!line.includes("geheim"));
+    assert.ok(line.length < 300);
   });
 });

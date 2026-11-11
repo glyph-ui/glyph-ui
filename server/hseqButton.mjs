@@ -57,6 +57,23 @@ export function hseqCorsHeaders(origin) {
   };
 }
 
+/**
+ * Logzeile pro Knopf-Aufruf: Status, Job, Origin, Absender. Nie das Passwort.
+ * Dient der Beobachtung von `Origin: null` — kommt er wirklich von Obsidian
+ * mobil, oder von fremden Seiten (Sandbox-Iframe, file://, data:)?
+ */
+export function hseqLogLine({ origin, client, job, status }) {
+  const raw = origin == null ? "" : String(origin).trim();
+  const label = raw ? raw.slice(0, 80) : "(kein)";
+  const kind = hseqCorsOrigin(raw) ? "erlaubt" : "fremd";
+  return (
+    `[hseq] run status=${Number(status) || 0}` +
+    ` job=${String(job ?? "?").slice(0, 60)}` +
+    ` origin=${label} (${kind})` +
+    ` client=${String(client || "?").slice(0, 64)}`
+  );
+}
+
 /** Drossel für Doppelklicks. */
 export function hseqThrottled(lastRunAt, now = Date.now(), minMs = HSEQ_BUTTON_MIN_INTERVAL_MS) {
   const last = Number(lastRunAt) || 0;

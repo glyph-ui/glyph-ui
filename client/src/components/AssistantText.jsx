@@ -19,6 +19,8 @@
  */
 import { memo, useRef, useState, useEffect } from "react";
 import { MarkdownBody } from "./MarkdownBody.jsx";
+import { ProviderErrorNotice } from "./ProviderErrorNotice.jsx";
+import { parseProviderError } from "../utils/providerError.js";
 import { cleanAssistantAnswer, stripLeakedToolCalls } from "../utils/assistantTrace.js";
 import { activityCounts, formatElapsed, friendlyActivityLine, latestActivity } from "../utils/activityStrip.js";
 
@@ -166,6 +168,10 @@ const AssistantText = memo(function AssistantText({
   const stripLine = streaming
     ? friendlyActivityLine(latest.line, latest.running)
     : counts || friendlyActivityLine(latest.line, latest.running);
+
+  // Anbieter-/HTTP-Fehler als eigene, ruhige Karte statt rohem JSON im Markdown.
+  const providerError = parseProviderError(prose);
+  if (providerError) return <ProviderErrorNotice info={providerError} />;
 
   return (
     <>

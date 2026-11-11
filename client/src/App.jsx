@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: MIT
  */
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
+
 import { AssistantText } from "./components/AssistantText.jsx";
 import { AssistantMeta } from "./components/AssistantMeta.jsx";
 import { SourceChips } from "./components/SourceChips.jsx";
@@ -33,6 +35,7 @@ import {
   withUiReloadCommand,
 } from "./utils/slash.js";
 import { hardReloadUi } from "./utils/reloadUi.js";
+import { providerErrorSummary } from "./utils/providerError.js";
 import { applyComposerMirrorMetrics } from "./utils/composerMirror.js";
 import { scrollChildIntoView } from "./utils/scrollChild.js";
 import {
@@ -244,7 +247,7 @@ function composerModeHint(action, agentId) {
   return COMPOSER_MODE_HELP[action] || COMPOSER_MODE_HELP.chat;
 }
 
-export default function App() {
+function AppInner() {
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
   /** Follow-up messages parked while Grok is working (TUI-style queue). */
@@ -2420,7 +2423,7 @@ export default function App() {
     }
     if (action === "swarm" && agent?.id && !canSwarm(agent.id)) {
       setError(
-        `Swarm läuft über °_Agent und ^_Code (aktiv: ${agent.label || "Agent"})`,
+        "Swarm ist mit diesem Profil nicht verfügbar — bitte zu °_Agent oder ^_tick wechseln.",
       );
       return;
     }
@@ -3509,7 +3512,7 @@ export default function App() {
       return "Deep Search Query… z. B. Compare Postgres 17 vs MySQL 9";
     }
     if (sendAction === "swarm") {
-      return "Swarm-Thema… °_Agent / ^_Code zerlegen, suchen, belegen";
+      return "Thema eingeben — Swarm sucht und belegt mit Quellen";
     }
     if (sendAction === "fork") {
       return "Optional: Directive für den Fork… (leer = nur Session branchen)";
@@ -4220,7 +4223,7 @@ export default function App() {
         ) : null}
         {error ? (
           <div className="banner banner--dismissible" role="alert">
-            <span className="banner-text">{error}</span>
+            <span className="banner-text">{providerErrorSummary(error)}</span>
             <button
               type="button"
               className="banner-dismiss"
@@ -5445,5 +5448,18 @@ export default function App() {
 
 
     </div>
+  );
+}
+
+/**
+ * Fehlergrenze ueber dem App-Baum: ein Render-Fehler darf nicht mehr die
+ * komplette Seite weiss machen (Fehler 2026-10-30: Schliessen des
+ * Quellen-Fensters).
+ */
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppInner />
+    </ErrorBoundary>
   );
 }

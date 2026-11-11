@@ -3794,7 +3794,7 @@ class GrokBridge {
     if (!q && !atts.length) throw new Error("Swarm braucht ein Thema");
     this.broadcast({
       type: "system",
-      text: "Swarm gestartet (°_Agent / ^_Code). Bericht kommt in diesen Chat.",
+      text: "Swarm gestartet. Bericht kommt in diesen Chat.",
     });
     await this.chat(q, atts, { swarm: true });
   }
@@ -4344,6 +4344,16 @@ httpServer.listen(PORT, HOST, () => {
         console.log("Models sync         → agent offline (apply on connect)");
     })
     .catch(() => {});
+
+  // Ein Engine-Neustart verliert das Hot-Apply: die Engine fällt auf ihre
+  // .env-Defaults zurueck (z. B. ein anderes Modell). Deshalb regelmaessig
+  // gegen bindings.json pruefen — bindings.json ist die Wahrheit.
+  const modelSyncTimer = setInterval(() => {
+    void syncModelsIfMismatch({ stateDir: STATE_DIR, env: process.env }).catch(
+      () => {},
+    );
+  }, 60 * 1000);
+  if (typeof modelSyncTimer.unref === "function") modelSyncTimer.unref();
 
   // Ensure upload dir exists so the first attachment does not race mkdir.
   const logUploadCleanup = (r) => {

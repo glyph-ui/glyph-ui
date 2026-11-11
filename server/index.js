@@ -3261,7 +3261,10 @@ class GrokBridge {
         this.statusPayload({
           busy: false,
           reconnecting: false,
-          agent:
+          // Eigenes Feld: `agent` ist das Profil-Objekt. Stand hier der Titel
+          // als Text, verlor der Client nach dem Login das °_Agent-Profil
+          // (Startseite „Chat" statt „Search" bis zum Neuladen).
+          agentTitle:
             initialized.agentInfo?.title ||
             initialized.agentInfo?.name ||
             "Grok Build",

@@ -1605,7 +1605,11 @@ function AppInner() {
           if (msg.seat === "desk" || msg.seat === "phone" || msg.seat === "web") {
             setSeat(msg.seat);
           }
-          if (msg.agent) setAgent(msg.agent);
+          // Nur ein echtes Profil übernehmen — ein Titel-Text ohne id machte
+          // aus °_Agent wieder „Chat".
+          if (msg.agent && typeof msg.agent === "object" && msg.agent.id) {
+            setAgent(msg.agent);
+          }
           if (msg.cwd) setCwd(msg.cwd);
           if (msg.connected) setError("");
           // "opened" reset is handled by onOpenSession with transcript;

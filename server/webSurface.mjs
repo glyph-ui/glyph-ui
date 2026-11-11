@@ -45,7 +45,28 @@ export function requestHostname(req) {
   return normalizeHostname(host);
 }
 
+function headerValue(req, name) {
+  return String(req?.get?.(name) || req?.headers?.[name] || "");
+}
+
+/**
+ * Kam die Anfrage über den Cloudflare-Tunnel? Cloudflare setzt CF-Connecting-IP
+ * bei jeder Anfrage selbst und überschreibt einen mitgeschickten Wert.
+ */
+export function viaTunnel(req) {
+  return Boolean(headerValue(req, "cf-connecting-ip").trim());
+}
+
+/**
+ * Web-Fläche, sobald irgendein Hinweis auf glyph-ui.com zeigt: Tunnel, Host
+ * oder X-Forwarded-Host. Kein Header darf eine Anfrage zur Admin-Fläche
+ * herabstufen. Früher entschied X-Forwarded-Host allein — den setzt aber der
+ * Absender, und mit „localhost“ darin ging glyph-ui.com ohne Passwort als
+ * Admin durch (über den Tunnel ist die Quell-IP immer Loopback).
+ */
 export function isWebRequest(req) {
+  if (viaTunnel(req)) return true;
+  if (isWebHostname(headerValue(req, "host"))) return true;
   return isWebHostname(requestHostname(req));
 }
 

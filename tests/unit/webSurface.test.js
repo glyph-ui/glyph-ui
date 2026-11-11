@@ -13,6 +13,7 @@ import {
   isWebGateExempt,
   isWebHostname,
   isWebOrigin,
+  isWebRequest,
   normalizeHostname,
   normalizeRequestPath,
   parseCookie,
@@ -280,5 +281,32 @@ describe("web session persistence", () => {
       access: { ...paid, consumed: 12 },
     });
     assert.deepEqual(got[1], { token: "old", iat: now - 2000 });
+  });
+});
+
+describe("isWebRequest", () => {
+  const req = (headers) => ({ headers });
+
+  it("treats glyph-ui.com as web", () => {
+    assert.equal(isWebRequest(req({ host: "glyph-ui.com" })), true);
+  });
+
+  it("keeps the Mac (loopback) as admin", () => {
+    assert.equal(isWebRequest(req({ host: "127.0.0.1:5174" })), false);
+    assert.equal(isWebRequest(req({ host: "localhost:5173" })), false);
+  });
+
+  it("X-Forwarded-Host cannot downgrade glyph-ui.com to admin", () => {
+    assert.equal(
+      isWebRequest(req({ host: "glyph-ui.com", "x-forwarded-host": "localhost" })),
+      true,
+    );
+  });
+
+  it("everything through the Cloudflare tunnel is web", () => {
+    assert.equal(
+      isWebRequest(req({ host: "localhost", "cf-connecting-ip": "203.0.113.7" })),
+      true,
+    );
   });
 });

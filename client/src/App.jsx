@@ -746,7 +746,10 @@ function AppInner() {
     };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
-  }, []);
+    // Nach dem Web-Login neu laden: vor dem Tor kennt der Server die Sitzung
+    // nicht und liefert kein °_Agent-Profil — die Startseite zeigte dann
+    // „Chat" statt „Search" bis zum nächsten Neuladen.
+  }, [webUnlocked]);
 
   useEffect(() => {
     let cancelled = false;

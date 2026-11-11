@@ -281,6 +281,63 @@ export function isWebOrigin(origin, extra = process.env.GLYPH_WEB_HOSTS) {
   }
 }
 
+/**
+ * Bremse gegen Passwort-Raten am Web-Tor.
+ *
+ * Pro Besucher 5 Fehlversuche in 10 Minuten, danach Wartezeit bis der älteste
+ * Versuch aus dem Fenster fällt. Dazu eine Obergrenze über alle Besucher, weil
+ * jemand mit vielen Adressen sonst trotzdem schnell raten könnte. Ein richtiges
+ * Passwort löscht die Fehlversuche dieses Besuchers. Nur im Speicher: ein
+ * Neustart setzt alles zurück.
+ */
+export const WEB_GATE_MAX_FAILURES = 5;
+export const WEB_GATE_MAX_FAILURES_ALL = 50;
+export const WEB_GATE_WINDOW_MS = 10 * 60 * 1000;
+const WEB_GATE_MAX_KEYS = 2000;
+
+/** Besucher-Schlüssel: über den Tunnel die echte IP, sonst die Socket-Adresse. */
+export function webClientKey(req) {
+  const cf = headerValue(req, "cf-connecting-ip").split(",")[0].trim();
+  return cf || String(req?.socket?.remoteAddress || "?");
+}
+
+export function createWebGateBrake({
+  max = WEB_GATE_MAX_FAILURES,
+  maxAll = WEB_GATE_MAX_FAILURES_ALL,
+  windowMs = WEB_GATE_WINDOW_MS,
+} = {}) {
+  const perKey = new Map();
+  let all = [];
+  const fresh = (list, now) => list.filter((t) => now - t < windowMs);
+  const recentFor = (key, now) => {
+    const mine = fresh(perKey.get(key) || [], now);
+    if (mine.length) perKey.set(key, mine);
+    else perKey.delete(key);
+    return mine;
+  };
+  return {
+    /** @returns {{ blocked: boolean, waitMs: number }} */
+    check(key, now = Date.now()) {
+      all = fresh(all, now);
+      const mine = recentFor(key, now);
+      const since =
+        mine.length >= max ? mine[0] : all.length >= maxAll ? all[0] : null;
+      if (since == null) return { blocked: false, waitMs: 0 };
+      return { blocked: true, waitMs: Math.max(0, windowMs - (now - since)) };
+    },
+    fail(key, now = Date.now()) {
+      perKey.set(key, [...recentFor(key, now), now]);
+      all.push(now);
+      if (perKey.size > WEB_GATE_MAX_KEYS) {
+        perKey.delete(perKey.keys().next().value);
+      }
+    },
+    reset(key) {
+      perKey.delete(key);
+    },
+  };
+}
+
 /** Cookie Max-Age (30 Tage). Sitzungen auf Disk nutzen dasselbe Fenster. */
 export const WEB_SESSION_TTL_S = 2592000;
 /**

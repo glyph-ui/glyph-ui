@@ -6,6 +6,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   agentAllowedOnSeat,
+  createWebGateBrake,
   defaultAgentIdForSeat,
   extraWebHosts,
   grantWebAccess,
@@ -14,6 +15,7 @@ import {
   isWebHostname,
   isWebOrigin,
   isWebRequest,
+  webClientKey,
   normalizeHostname,
   normalizeRequestPath,
   parseCookie,
@@ -308,5 +310,46 @@ describe("isWebRequest", () => {
       isWebRequest(req({ host: "localhost", "cf-connecting-ip": "203.0.113.7" })),
       true,
     );
+  });
+});
+
+describe("web gate brake", () => {
+  const t0 = 1_800_000_000_000;
+
+  it("blocks a visitor after 5 failures and lets them in after the window", () => {
+    const b = createWebGateBrake();
+    for (let i = 0; i < 5; i++) {
+      assert.equal(b.check("a", t0 + i).blocked, false);
+      b.fail("a", t0 + i);
+    }
+    const now = b.check("a", t0 + 10);
+    assert.equal(now.blocked, true);
+    assert.ok(now.waitMs > 9 * 60 * 1000);
+    assert.equal(b.check("b", t0 + 10).blocked, false, "andere Besucher unberührt");
+    assert.equal(b.check("a", t0 + 10 * 60 * 1000 + 1).blocked, false);
+  });
+
+  it("a correct password clears that visitor", () => {
+    const b = createWebGateBrake();
+    for (let i = 0; i < 4; i++) b.fail("a", t0);
+    b.reset("a");
+    for (let i = 0; i < 4; i++) b.fail("a", t0);
+    assert.equal(b.check("a", t0).blocked, false);
+  });
+
+  it("caps failures across all visitors", () => {
+    const b = createWebGateBrake({ maxAll: 3 });
+    b.fail("a", t0);
+    b.fail("b", t0);
+    b.fail("c", t0);
+    assert.equal(b.check("d", t0).blocked, true);
+  });
+
+  it("keys visitors by the tunnel IP, else the socket", () => {
+    assert.equal(
+      webClientKey({ headers: { "cf-connecting-ip": "203.0.113.7" }, socket: { remoteAddress: "127.0.0.1" } }),
+      "203.0.113.7",
+    );
+    assert.equal(webClientKey({ headers: {}, socket: { remoteAddress: "127.0.0.1" } }), "127.0.0.1");
   });
 });

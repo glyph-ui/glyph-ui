@@ -52,6 +52,7 @@ import {
   WEB_COOKIE,
   WEB_SEAT,
   agentAllowedOnSeat,
+  createWebGateBrake,
   defaultAgentIdForSeat,
   isWebAdminApi,
   isWebGateExempt,
@@ -64,6 +65,7 @@ import {
   publicWebAccess,
   serializeWebSessions,
   validateNewWebPassword,
+  webClientKey,
   WEB_SESSION_TTL_S,
   sessionTtlS,
   WEB_SESSIONS_MAX,
@@ -1208,6 +1210,9 @@ app.get("/api/web-gate", (req, res) => {
   res.json(body);
 });
 
+/** Fehlversuche am Web-Tor (nur Speicher, Neustart setzt zurück). */
+const webGateBrake = createWebGateBrake();
+
 app.post("/api/web-gate", (req, res) => {
   if (!isWebRequest(req)) {
     res.json({ ok: true, required: false });
@@ -1216,6 +1221,17 @@ app.post("/api/web-gate", (req, res) => {
   const origin = req.get("origin") || "";
   if (origin && !isAllowedWsOrigin(origin)) {
     res.status(403).json({ error: "Forbidden", gate: true });
+    return;
+  }
+  const gateKey = webClientKey(req);
+  const brake = webGateBrake.check(gateKey);
+  if (brake.blocked) {
+    const min = Math.max(1, Math.ceil(brake.waitMs / 60000));
+    res.setHeader("Retry-After", String(Math.ceil(brake.waitMs / 1000)));
+    res.status(429).json({
+      error: `Zu viele Fehlversuche — bitte ${min} min warten`,
+      gate: true,
+    });
     return;
   }
   // Haupt-Passwort zuerst, dann Gast. Beide öffnen die Tür, aber mit
@@ -1227,9 +1243,11 @@ app.post("/api/web-gate", (req, res) => {
     role = "guest";
   }
   if (!role) {
+    webGateBrake.fail(gateKey);
     res.status(401).json({ error: "Passwort falsch", gate: true });
     return;
   }
+  webGateBrake.reset(gateKey);
   const grant = grantWebAccess({ source: "password", role });
   const token = issueWebSession(grant.access);
   res.setHeader("Set-Cookie", webCookieHeader(token, sessionTtlS(grant.access)));

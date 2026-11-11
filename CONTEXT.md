@@ -20,7 +20,7 @@ Browser-UI für mehrere lokale und Cloud-Agenten über ACP (Agent Client Protoco
 | **Tool-Karte** | Aufklappbare ACP-Toolzeile (Verb + Ziel, Diff/Ausgabe nach Klick). ^_tick: *Warum erlaubt?* | `client/src/components/ToolCard.jsx`, `client/src/utils/toolCard.js`, `server/toolTitle.mjs` | Bridge `type: tool` |
 | **Stufen-Anzeige** | Live-Stufen als Textblöcke (`⏺STEP⏺` / `⏹STEP⏹`); Mapping liegt ZWEIMAL: `glyph-agent-acp.mjs` (Live) und `stepBanner.mjs` (Fallback-Banner ohne Live-Steps) — neue Stufe immer in beiden. °_Agent: **Query** (Suchbrücke löst die Rückfrage mit dem Verlauf auf) → **SearchWeb** (×1–2) → Think → Antwort. | `server/glyph-agent-acp.mjs`, `server/stepBanner.mjs` | glyph-agent Trace `steps[]` + Live-Events |
 | **Composer / Slash** | Eingabe, Slash-Popup, Skills/Commands einfügen. Idle-Senden = Graph-Kopf (Grok Build / °_Agent / ^_tick) mittig 50 %, Stein-Schwanz 8-6-4 nach rechts; Arbeit = Snack. Modus **Chat · Deep Search · Fork · Swarm**. °_Agent beschriftet den Basis-Modus **Search** (id bleibt `chat`). Fork = `x.ai/session/fork` dann ACP `session/fork`; Deep Search = Grok `/deep-research` (andere Köpfe ausgegraut); Swarm = °_Agent/^_tick `POST /chat` `swarm: true`. | `client/src/App.jsx`, `client/src/components/GraphFaces.jsx`, `shared/composerActions.mjs`, `server/glyph-agent-acp.mjs` | Bridge |
-| **Ordner-Suche** | °_Agent: Modus **Vault** im Sendemenü (neben Search und Swarm). TinyFish/Exa immer. Search = nur offenes Web, kein memory-wiki, kein Arbeits-Vault (Draht weiter `type: chat`). Vault → `/api/vault/find` Arbeits-Vault, Treffer in der Arbeitsleiste, Default aus, nur aktivierte in den Kontext; leer → KomNet, sonst DGUV. | `App.jsx` Sendemenü, `VaultSearchHits.jsx`, `utils/vaultSearch.js`, `server/vaultFlags.mjs` | glyph-agent `POST /vault/find`, `/chat` `vault_search` / `vault_selected` |
+| **Ordner-Suche** | °_Agent: Modus **Vault** im Sendemenü (neben Search und Swarm). TinyFish/Exa immer. Search = nur offenes Web, kein memory-wiki, kein Arbeits-Vault (Draht weiter `type: chat`). Vault → Antwort zuerst (Engine-Precheck sucht den Arbeits-Vault automatisch); optional `/api/vault/find` über die Suche an der letzten Antwort, Treffer in der Arbeitsleiste, nur aktivierte als Zusatz-Kontext; leer → KomNet, sonst DGUV. | `App.jsx` Sendemenü, `VaultSearchHits.jsx`, `utils/vaultSearch.js`, `server/vaultFlags.mjs` | glyph-agent `POST /vault/find`, `/chat` `vault_search` / `vault_selected` |
 | **Quellen-Fenster** | Klick Vault oder Web: SideDrawer (Chat bleibt, Breite ziehbar). PDF/MD: Begriffsuche, Trefferliste, Obsidian. Web: iframe + Browser. Kurz-Labels. | `SourceViewer.jsx`, `SourceChips.jsx`, `MarkdownBody.jsx`, `utils/sourceLinks.js`, `utils/sourceFind.js`, `utils/pdfText.js` | `/api/vault/file`; pdfjs-Textindex |
 | **Sessions** | Session-Liste, Überblick, **Name** (`/rename`) | `server/sessions.js`, `client/…/CommandOverview.jsx` | Bridge |
 | **Rewind** | Nutzer-Turn und alles danach aus dem Verlauf. Esc Esc, `/rewind`, ↺ an der Nachricht. Dateien bleiben. | `shared/rewind.mjs`, `RewindPicker.jsx`, Bridge `type: rewind` | Sessions, Bridge |
@@ -82,7 +82,7 @@ Eine aufklappbare Zeile im Chat für einen ACP-Tool-Aufruf: Verb + Ziel in der Z
 _Avoid_: Tool-Card (EN), Paper-Card, grok-build-web Disclosure; erlaubtes Tool ohne Scope-Hinweis
 
 **Ordner-Suche**:
-Manueller Zugriff auf den **Arbeits-Vault** im Profil **°_Agent**, als Modus **Vault** im Sendemenü (neben Chat und Swarm). Kein Pixel-Apfel. **Immer**: TinyFish, Exa. Modus Search: nur offenes Web — kein memory-wiki, kein Arbeits-Vault. Modus Vault: Arbeits-Vault und memory-wiki; nächste Sendung sucht den Arbeits-Vault, Treffer in der **Arbeitsleiste** über der LVL-Leiste, nie im Chat-Verlauf, jedes Ergebnis startet aus; nur explizit an = Arbeits-Vault in den Kontext; Vault leer → **KomNet** (`komnet.nrw.de`) einmal via Exa+TinyFish; ohne Treffer **DGUV** (`dguv.de`) ebenso. Gesperrte Modi (Deep Search, Fork bei °_Agent) stehen nicht im Menü. Jobs/Engine ohne Flag bleiben beim B+-Precheck. ACP `vault_search=false` = nur offenes Web; mit Auswahl = Arbeits-Vault-Treffer + Wiki. Kein HTML-Scrape.
+Manueller Zugriff auf den **Arbeits-Vault** im Profil **°_Agent**, als Modus **Vault** im Sendemenü (neben Chat und Swarm). Kein Pixel-Apfel. **Immer**: TinyFish, Exa. Modus Search: nur offenes Web — kein memory-wiki, kein Arbeits-Vault. Modus Vault: Arbeits-Vault und memory-wiki; die Sendung wird sofort beantwortet; der Engine-Precheck sucht den Arbeits-Vault automatisch. Optional öffnet die Suche an der letzten Antwort die Treffer in der **Arbeitsleiste** über der LVL-Leiste (nie im Chat-Verlauf); ausgewählte Dateien gehen als Zusatz-Kontext in eine erneute Frage; Vault leer → **KomNet** (`komnet.nrw.de`) einmal via Exa+TinyFish; ohne Treffer **DGUV** (`dguv.de`) ebenso. Gesperrte Modi (Deep Search, Fork bei °_Agent) stehen nicht im Menü. Jobs/Engine ohne Flag bleiben beim B+-Precheck. ACP `vault_search=false` = nur offenes Web; mit Auswahl = Arbeits-Vault-Treffer + Wiki. Kein HTML-Scrape.
 _Avoid_: Arbeits-Vault ohne Modus Vault; Pixel-Apfel als Schalter; gesperrte Modi durchgestrichen im Menü; Lupe (Sessions); Treffer als Chat-Nachrichten; Treffer-Popup über der Composer-Box; KomNet-HTML direkt; KomNet und DGUV parallel; allgemeine Websuche als Vault-Fallback; „sucht in …“ neben dem Modus
 
 **Quellen-Fenster**:
@@ -293,11 +293,11 @@ _Avoid_: OpenRouter-Antwort in UI-Strings; OpenRouter als Slot-Name in der Anbin
 
 - °_Agent-Composer: Modus **Vault** im Sendemenü, neben Chat und Swarm. Kein Pixel-Apfel. Standard **aus** (Modus Chat).
 - Immer: memory-wiki, TinyFish, Exa — auch im Modus Chat. **Aufgehoben 2026-10-31:** Search sucht nur im offenen Web; memory-wiki nur im Modus Vault (Code seit 2026-10-03, `tool_loop.run` `web_only`).
-- An: Suche erst beim Senden; Treffer in der Arbeitsleiste über der LVL-Leiste, nie im Chat-Verlauf. Default **aus**; nur explizit aktivierte Treffer gehen als Arbeits-Vault in den Kontext (`vault_search` + `vault_selected`); Wiki läuft extra. Ohne Auswahl: Wiki + offenes Web, kein Arbeits-Vault.
+- An: Antwort zuerst; der Engine-Precheck sucht den Arbeits-Vault automatisch. Die Trefferleiste ist eine optionale Vertiefung über die Suche an der letzten Antwort (Arbeitsleiste über der LVL-Leiste, nie im Chat-Verlauf). Nur explizit aktivierte Treffer gehen als Zusatz-Kontext mit (`vault_selected`); Wiki läuft extra.
 - Erster Kopf-Klick startet die Suche und **leert den Composer**; Query steht in der Leiste. Weiterer Prompt sofort tippbar.
 - Suche abbrechen: × in der Leiste, Snack, oder Kopf ohne neuen Text. Fetch bricht ab — Leiste zu ≠ Suche läuft weiter.
 - Modus Vault liegt am Sendemenü (`gbt-action`), nicht als eigener Apfel-Schalter.
-- Interaktives ACP: `vault_search` + Auswahl = Arbeits-Vault-Treffer. Fehlt/aus = nur offenes Web, kein memory-wiki, kein Arbeits-Vault (Stand 2026-10-31). Jobs/`/chat` ohne Flag: B+ unverändert.
+- Interaktives ACP: `vault_search` + Auswahl = Arbeits-Vault-Treffer (zusätzlich, kein Filter). Fehlt/aus = nur offenes Web, kein memory-wiki, kein Arbeits-Vault (Stand 2026-10-31). Jobs/`/chat` ohne Flag: B+ unverändert.
 - Suchfehler (404 etc.) rot in der Arbeitsleiste; Chat bleibt sendbar.
 - Treffer: Ordner- und Dateinamen auf Disk (nicht nur Index-Eltern). Gleichnamige Ordner in HSEQ Sync und Hauptarchiv beide listen.
 - Vault leer: Exa+TinyFish auf KomNet; 0 Treffer → dieselben auf DGUV. Gleiche Leiste, Label **KOMNET** / **DGUV**, `kind: web`. Nur aktivierte URLs in den Kontext — nicht als Vault-Pfad.
@@ -307,6 +307,13 @@ _Avoid_: OpenRouter-Antwort in UI-Strings; OpenRouter als Slot-Name in der Anbin
 
 - °_Agent und ^_tick: Direct `deepseek-v4-flash-vision-exp` (Text + Bilder). Reserve `deepseek/deepseek-v4-flash-0731`.
 - Kein Auto-Hop nur bei Screenshot. Graph/Anbindung Default und Placeholder = Vision-Exp.
+
+### Ordner-Suche: Antwort zuerst (2026-10-30)
+
+- Senden blockiert nicht mehr auf der Trefferwahl. Die Engine sucht den Vault im Precheck automatisch.
+- Die Trefferleiste öffnet nur noch über die Suche an der **letzten Antwort** („Vault weiter durchsuchen“); sie erscheint nach der Antwort, nicht davor.
+- „Mit Auswahl erneut fragen“ sendet dieselbe Frage mit `vault_selected` erneut. „Ohne Auswahl weiter“ entfällt.
+- `vault_selected` bleibt Zusatz-Kontext (vollständig gelesene Dateien), keine Sperre.
 
 ### Arbeitsleiste (2026-08-20)
 

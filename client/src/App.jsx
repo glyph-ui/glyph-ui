@@ -133,7 +133,6 @@ import {
 } from "./utils/rewind.js";
 import {
   saveVaultSearchOn,
-  vaultSendIntent,
   defaultSelectedIds,
   selectedHits,
   normalizePreviewPayload,
@@ -443,10 +442,16 @@ export default function App() {
   const [vaultHits, setVaultHits] = useState(null);
   const [vaultHitOn, setVaultHitOn] = useState(() => new Set());
   const [vaultSearchBusy, setVaultSearchBusy] = useState(false);
+  /** Aktueller Ordner-Scope der Trefferliste (leer = ganze Arbeits-Vault). */
+  const [vaultScope, setVaultScope] = useState("");
+  /** Treffer-Leiste ist bewusst zu — der Nutzer klappt sie bei Bedarf auf. */
+  const [vaultHitsOpen, setVaultHitsOpen] = useState(false);
   const [vaultSearchError, setVaultSearchError] = useState("");
   const runVaultSearchRef = useRef(null);
   const vaultSearchAbortRef = useRef(null);
   const vaultLastPickedRef = useRef([]);
+  /** Letzte Frage im Vault-Modus (Basis fuer "Im Ordner suchen"). */
+  const vaultLastQueryRef = useRef("");
   const vaultLastPickedQueryRef = useRef("");
   const isAgentProfile =
     agent?.id === "glyph-agent" || agent?.id === "agent";
@@ -2259,15 +2264,17 @@ export default function App() {
     vaultLastPickedQueryRef.current = "";
   }, []);
 
-  const runVaultSearch = useCallback(async (query) => {
+  const runVaultSearch = useCallback(async (query, folder = "") => {
     const q = String(query || "").trim();
     if (!q) return;
+    const scope = String(folder || "").trim();
     vaultSearchAbortRef.current?.abort();
     const ac = new AbortController();
     vaultSearchAbortRef.current = ac;
     setVaultSearchBusy(true);
     setVaultSearchError("");
-    setVaultHits({ query: q, hits: [], status: "pending" });
+    setVaultScope(scope);
+    setVaultHits({ query: q, hits: [], status: "pending", folder: scope });
     setVaultHitOn(new Set());
     try {
       const res = await seatFetch("/api/vault/find", {
@@ -2276,7 +2283,7 @@ export default function App() {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-        body: JSON.stringify({ query: q }),
+        body: JSON.stringify({ query: q, ...(scope ? { folder: scope } : {}) }),
         signal: ac.signal,
       });
       const json = await res.json().catch(() => ({}));
@@ -2285,12 +2292,12 @@ export default function App() {
         throw new Error(json.error || vaultFindHttpError(res.status));
       }
       const preview = normalizePreviewPayload(json, q);
-      setVaultHits(preview);
+      setVaultHits({ ...preview, folder: scope });
       setVaultHitOn(defaultSelectedIds(preview.hits));
     } catch (err) {
       if (ac.signal.aborted || err?.name === "AbortError") return;
       setVaultSearchError(err instanceof Error ? err.message : String(err));
-      setVaultHits({ query: q, hits: [], status: "error" });
+      setVaultHits({ query: q, hits: [], status: "error", folder: scope });
       setVaultHitOn(new Set());
     } finally {
       if (vaultSearchAbortRef.current === ac) {
@@ -2302,6 +2309,19 @@ export default function App() {
   runVaultSearchRef.current = runVaultSearch;
 
   runVaultSearchRef.current = runVaultSearch;
+
+  /** "Im Ordner suchen": die letzte Frage im Ordner erneut suchen. */
+  const searchInVaultFolder = useCallback(
+    (folder) => {
+      const q = String(vaultLastQueryRef.current || "").trim();
+      if (!q) {
+        setError("Keine Frage vorhanden — erst eine Frage stellen.");
+        return;
+      }
+      void runVaultSearch(q, folder);
+    },
+    [runVaultSearch],
+  );
 
   const send = useCallback((explicitText) => {
     // Optional explicit text avoids stale closure when callers setInput then send
@@ -2396,25 +2416,9 @@ export default function App() {
       isAgentProfile && action === "chat" && sendAction === "vault";
     let vaultSelected = [];
     if (vaultMode) {
-      const intent = vaultSendIntent({
-        appleOn: true,
-        searchBusy: vaultSearchBusy,
-        query: body,
-        hitsQuery: vaultHits?.query,
-        hitsStatus: vaultHits?.status,
-        error: vaultSearchError,
-        lastPickedCount: vaultLastPickedRef.current.length,
-        lastPickedQuery: vaultLastPickedQueryRef.current,
-      });
-      if (intent === "abort" || intent === "abort-then-search") {
-        abortVaultSearch();
-      }
-      if (intent === "search" || intent === "abort-then-search") {
-        setInput("");
-        clearPendingAttachments();
-        void runVaultSearch(body);
-        return;
-      }
+      // Antwort zuerst: die Engine sucht den Vault im Precheck automatisch.
+      // Die Treffer-Auswahl ist nur noch eine optionale Vertiefung nach der
+      // Antwort (Büroklammer-/Suchknopf an der Nachricht), kein Senden-Blocker.
       const live = toWireSelected(
         selectedHits(vaultHits?.hits || [], vaultHitOn),
       );
@@ -2455,8 +2459,15 @@ export default function App() {
     setInput("");
     clearPendingAttachments();
     if (vaultMode) {
+      // Suche laeuft parallel zur Antwort: die Treffer kommen in der
+      // Arbeitsleiste, die Antwort steht sofort daneben. Erst danach kann
+      // gezielt in einem Ordner weitergesucht werden.
+      vaultLastQueryRef.current = body;
+      setVaultHitsOpen(false);
       setVaultHits(null);
       setVaultHitOn(new Set());
+      setVaultScope("");
+      void runVaultSearch(body);
     }
     if (action === "fork") setSendAction("chat");
     dispatchPayload(payload);
@@ -2476,7 +2487,6 @@ export default function App() {
     buildDisplayText,
     dispatchPayload,
     vaultSearchBusy,
-    vaultSearchError,
     vaultHits,
     vaultHitOn,
     abortVaultSearch,
@@ -2556,31 +2566,6 @@ export default function App() {
     vaultHitOn,
     dispatchPayload,
   ]);
-
-  /** „Ohne Auswahl weiter": Query senden, Wiki+Web, kein Arbeits-Vault-Kontext. */
-  const sendVaultContinueWithout = useCallback(() => {
-    const text = String(vaultHits?.query || input.trim()).trim();
-    vaultLastPickedRef.current = [];
-    vaultLastPickedQueryRef.current = "";
-    setVaultHits(null);
-    setVaultHitOn(new Set());
-    setVaultSearchError("");
-    if (!text) return;
-    const payload = {
-      id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      text,
-      action: "chat",
-      displayText: text,
-      vaultSearch: false,
-    };
-    if (input.trim() === text) setInput("");
-    if (busy || messages.some((m) => m.streaming)) {
-      queueRef.current = [...queueRef.current, payload];
-      setQueue([...queueRef.current]);
-      return;
-    }
-    dispatchPayload(payload);
-  }, [busy, messages, input, vaultHits, dispatchPayload]);
 
   const removeQueued = useCallback((id) => {
     queueRef.current = queueRef.current.filter((q) => q.id !== id);
@@ -4718,7 +4703,21 @@ export default function App() {
               }}
               onDismiss={abortVaultSearch}
               onSend={sendVaultSelection}
-              onContinueWithout={sendVaultContinueWithout}
+              collapsed={!vaultHitsOpen}
+              onExpand={() => setVaultHitsOpen((v) => !v)}
+              scope={vaultScope}
+              onScopeBack={() => {
+                const q = String(vaultLastQueryRef.current || "").trim();
+                if (q) void runVaultSearch(q, "");
+              }}
+              onOpenFile={(hit) => {
+                const p = String(hit?.path || "");
+                if (!p) return;
+                setSourceFile({ path: p, title: p.split("/").pop() });
+              }}
+              onSearchFolder={(folder) =>
+                searchInVaultFolder(String(folder || ""))
+              }
             />
           ) : null}
           {queue.length > 0 ? (

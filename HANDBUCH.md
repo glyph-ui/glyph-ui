@@ -315,7 +315,7 @@ Markdown (Codeblöcke, Links, …) wird vor dem TTS grob bereinigt.
 |---------|----------------|
 | Idle | Button zeigt den **Kopf** (Grok Build / °_Agent / ^_tick) → senden |
 | Arbeitet | Snack-Animation (Schlange jagt Apfel) |
-| Ordner-Suche | Apfel: Arbeits-Vault. Wiki, TinyFish, Exa immer. Snack; Composer leer, Query in der Leiste. × oder Snack = Fetch abbrechen. Vault leer: KomNet einmal, sonst DGUV. Ohne Apfel: allgemeine Suche, Internet, soziale Netze |
+| Ordner-Suche | Modus Vault: Antwort zuerst, Engine sucht den Vault automatisch. Optionale Vertiefung über die Suche an der letzten Antwort; ausgewählte Dateien gehen als Zusatz-Kontext in eine erneute Frage. × bricht die Suche ab. Vault leer: KomNet einmal, sonst DGUV. Ohne Vault: allgemeine Suche, Internet, soziale Netze |
 | Text + Enter während Arbeit | Nachricht landet in der **Warteschlange** |
 | Leerer Klick / Snack während Arbeit | **Soft-Stop** (ACP-Cancel bzw. Vault-Suche). Kritische Tools können noch sauber enden |
 

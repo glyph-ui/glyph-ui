@@ -17,7 +17,12 @@ export function VaultSearchHits({
   onToggle,
   onDismiss,
   onSend,
-  onContinueWithout,
+  scope = "",
+  onScopeBack,
+  onOpenFile,
+  onSearchFolder,
+  collapsed = false,
+  onExpand,
 }) {
   const n = hits.length;
   const chosen = selectedIds instanceof Set ? selectedIds : new Set();
@@ -71,19 +76,32 @@ export function VaultSearchHits({
     body = (
       <>
         <p className="composer-sheet-note vault-hits-subtitle">
-          Erste Treffer — wähle Ordner/Dateien für den Kontext.
+          Treffer aus der Vault-Suche — Datei öffnen, für den Kontext wählen
+          oder im Ordner weitersuchen.
         </p>
         <ul className="vault-hits-list">
           {hits.map((h) => {
             const id = hitId(h);
             const on = chosen.has(id);
+            const isFolder = h.kind === "folder";
+            const folderPath = isFolder
+              ? String(h.path || "")
+              : String(h.path || "").slice(
+                  0,
+                  String(h.path || "").lastIndexOf("/"),
+                );
             return (
-              <li key={id}>
+              <li key={id} className="vault-hit-row">
                 <button
                   type="button"
                   className={`vault-hit${on ? " is-on" : ""}`}
                   aria-pressed={on}
                   onClick={() => onToggle(id)}
+                  title={
+                    isFolder
+                      ? "Für den Kontext wählen"
+                      : "Für den Kontext wählen · Datei öffnen"
+                  }
                 >
                   <span className="vault-hit-pip" aria-hidden="true" />
                   <span className="vault-hit-body">
@@ -102,6 +120,30 @@ export function VaultSearchHits({
                     )}
                   </span>
                 </button>
+                <span className="vault-hit-actions">
+                  {!isFolder && onOpenFile ? (
+                    <button
+                      type="button"
+                      className="vault-hit-action"
+                      title={`${h.title} öffnen`}
+                      aria-label={`${h.title} öffnen`}
+                      onClick={() => onOpenFile(h)}
+                    >
+                      Öffnen
+                    </button>
+                  ) : null}
+                  {folderPath && onSearchFolder ? (
+                    <button
+                      type="button"
+                      className="vault-hit-action"
+                      title={`Im Ordner suchen: ${folderPath}`}
+                      aria-label={`Im Ordner ${folderPath} suchen`}
+                      onClick={() => onSearchFolder(folderPath)}
+                    >
+                      Im Ordner suchen
+                    </button>
+                  ) : null}
+                </span>
               </li>
             );
           })}
@@ -115,32 +157,39 @@ export function VaultSearchHits({
       label="Wo weitersuchen?"
       count={busy || !n ? null : `${onCount}/${n}`}
       current={query || null}
+      collapsed={collapsed}
+      onToggle={onExpand}
       onDismiss={onDismiss}
       dismissTitle={busy ? "Suche abbrechen" : "Treffer verwerfen"}
       dismissLabel={busy ? "Suche abbrechen" : "Treffer verwerfen"}
       ariaLabel="Wo weitersuchen?"
       footer={
         !busy && !error && n > 0 ? (
-          <>
-            <button
-              type="button"
-              className="ghost composer-sheet-quiet"
-              onClick={onContinueWithout}
-            >
-              Ohne Auswahl weiter
-            </button>
-            <button
-              type="button"
-              className="composer-sheet-go"
-              disabled={onCount === 0}
-              onClick={onSend}
-            >
-              Übernehmen
-            </button>
-          </>
+          <button
+            type="button"
+            className="composer-sheet-go"
+            disabled={onCount === 0}
+            onClick={onSend}
+          >
+            Mit Auswahl erneut fragen
+          </button>
         ) : null
       }
     >
+      {scope ? (
+        <p className="composer-sheet-note vault-hits-scope">
+          Im Ordner: <span className="vault-hits-scope-path">{scope}</span>
+          {onScopeBack ? (
+            <button
+              type="button"
+              className="ghost vault-hits-scope-back"
+              onClick={onScopeBack}
+            >
+              Zurück
+            </button>
+          ) : null}
+        </p>
+      ) : null}
       {indexNote}
       {body}
     </ComposerSheet>
